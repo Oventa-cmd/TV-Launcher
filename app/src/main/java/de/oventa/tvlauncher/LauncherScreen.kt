@@ -1,6 +1,5 @@
 package de.oventa.tvlauncher
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -82,15 +81,13 @@ private val Glass = Color.White.copy(alpha = 0.10f)
 private val Smooth = spring<Float>(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)
 
 @Composable
-fun LauncherScreen(
-    activity: MainActivity,
-    apps: List<TvApp>,
-    visible: List<String>,
-    inputs: List<TvInput>,
-    wallpaper: Int,
-    showInputs: Boolean,
-    resumeTick: Int
-) {
+fun LauncherScreen(state: LauncherState) {
+    val apps = state.apps.value
+    val visible = state.visible.value
+    val showInputs = state.showInputs.value
+    val inputs = if (showInputs) state.inputs.value else emptyList()
+    val wallpaper = state.wallpaper.value
+    val resumeTick = state.tick.value
     var settingsOpen by remember { mutableStateOf(false) }
     var focusedLabel by remember { mutableStateOf("") }
     val firstTile = remember { FocusRequester() }
@@ -99,8 +96,6 @@ fun LauncherScreen(
 
     val byPkg = apps.associateBy { it.packageName }
     val shown = visible.mapNotNull { byPkg[it] }
-
-    BackHandler(enabled = true) { if (settingsOpen) settingsOpen = false }
 
     LaunchedEffect(shown.size, resumeTick, settingsOpen) {
         if (!settingsOpen && shown.isNotEmpty()) {
@@ -114,7 +109,12 @@ fun LauncherScreen(
             .fillMaxSize()
             .background(Color.Black)
             .onPreviewKeyEvent { e ->
-                if (e.key == Key.Menu && e.type == KeyEventType.KeyUp) { settingsOpen = !settingsOpen; true } else false
+                when {
+                    e.key == Key.Menu && e.type == KeyEventType.KeyUp -> { settingsOpen = !settingsOpen; true }
+                    // Zurueck: schliesst die Einstellungen, verlaesst den Launcher aber nie
+                    e.key == Key.Back -> { if (e.type == KeyEventType.KeyUp && settingsOpen) settingsOpen = false; true }
+                    else -> false
+                }
             }
     ) {
         Crossfade(targetState = wallpaper.coerceIn(0, WALLPAPERS.size - 1), animationSpec = tween(600), label = "wall") { w ->
@@ -169,7 +169,7 @@ fun LauncherScreen(
                                     if (showInputs && inputs.isNotEmpty()) down = firstPill
                                 },
                             onFocus = { focusedLabel = app.label },
-                            onClick = { Apps.launch(activity, app.packageName) }
+                            onClick = { state.launch(app.packageName) }
                         )
                     }
                 }
@@ -181,7 +181,7 @@ fun LauncherScreen(
                 Row(Modifier.height(44.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Eingänge", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(end = 4.dp))
                     inputs.forEachIndexed { i, inp ->
-                        Pill(inp.label, if (i == 0) Modifier.focusRequester(firstPill).focusProperties { up = firstTile } else Modifier.focusProperties { up = firstTile }) { Apps.openInput(activity, inp.id) }
+                        Pill(inp.label, if (i == 0) Modifier.focusRequester(firstPill).focusProperties { up = firstTile } else Modifier.focusProperties { up = firstTile }) { state.openInput(inp.id) }
                     }
                 }
             }
@@ -193,7 +193,7 @@ fun LauncherScreen(
             exit = slideOutHorizontally(tween(260)) { it } + fadeOut(tween(200)),
             modifier = Modifier.align(Alignment.CenterEnd)
         ) {
-            SettingsPanel(activity, apps, visible, wallpaper, showInputs)
+            SettingsPanel(state, apps, visible, wallpaper, showInputs)
         }
     }
 }
@@ -304,7 +304,7 @@ private fun Pill(label: String, modifier: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SettingsPanel(activity: MainActivity, apps: List<TvApp>, visible: List<String>, wallpaper: Int, showInputs: Boolean) {
+private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: List<String>, wallpaper: Int, showInputs: Boolean) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { delay(80); try { first.requestFocus() } catch (_: Exception) { } }
     val ordered = visible.mapNotNull { p -> apps.firstOrNull { it.packageName == p } } + apps.filter { it.packageName !in visible }
