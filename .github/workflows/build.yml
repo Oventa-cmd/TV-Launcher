@@ -40,6 +40,11 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          KEYSTORE_PASSWORD=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d '\r\n\t ')
+          KEY_PASSWORD=$(printf '%s' "$KEY_PASSWORD" | tr -d '\r\n\t ')
+          KEY_ALIAS=$(printf '%s' "$KEY_ALIAS" | tr -d '\r\n\t ')
+          export KEYSTORE_PASSWORD KEY_PASSWORD KEY_ALIAS
+          echo "::notice::Passwortlaenge nach Bereinigung: ${#KEYSTORE_PASSWORD} (erwartet 32)"
           if [ -n "$KEYSTORE_FILE" ]; then
             if keytool -list -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2> kt.err; then
               echo "::notice::Keystore OK (Alias gefunden)"
