@@ -177,7 +177,8 @@ fun LauncherScreen(
 
             if (showInputs && inputs.isNotEmpty()) {
                 Spacer(Modifier.height(22.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Feste Hoehe: das Wachsen der Eingaenge verschiebt nichts darueber
+                Row(Modifier.height(44.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Eingänge", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(end = 4.dp))
                     inputs.forEachIndexed { i, inp ->
                         Pill(inp.label, if (i == 0) Modifier.focusRequester(firstPill).focusProperties { up = firstTile } else Modifier.focusProperties { up = firstTile }) { Apps.openInput(activity, inp.id) }
