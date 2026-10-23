@@ -199,15 +199,20 @@ private fun TopBar(onSettings: () -> Unit, gear: FocusRequester) {
         Box(
             Modifier
                 .size(32.dp)
-                .graphicsLayer { scaleX = s; scaleY = s }
-                .clip(CircleShape)
-                .background(if (f) White else Glass)
                 .focusRequester(gear)
                 .onFocusChanged { f = it.isFocused }
-                .clickable(remember { MutableInteractionSource() }, null) { onSettings() },
-            contentAlignment = Alignment.Center
+                .clickable(remember { MutableInteractionSource() }, null) { onSettings() }
         ) {
-            Text("⚙", color = if (f) Color.Black else White, fontSize = 16.sp)
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { scaleX = s; scaleY = s }
+                    .clip(CircleShape)
+                    .background(if (f) White else Glass),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("⚙", color = if (f) Color.Black else White, fontSize = 16.sp)
+            }
         }
         Spacer(Modifier.weight(1f))
         Text(date, color = Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
@@ -226,15 +231,20 @@ private fun AppTile(app: TvApp, modifier: Modifier, onFocus: () -> Unit, onClick
     val shape = RoundedCornerShape(11.dp)
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(120.dp)) {
+        // Fokus-Ziel ohne Transformation, damit die Pfeiltasten-Navigation die echte Position nutzt
         Box(
             modifier
                 .size(120.dp, 68.dp)
+                .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocus() }
+                .clickable(remember { MutableInteractionSource() }, null) { onClick() }
+        ) {
+        Box(
+            Modifier
+                .fillMaxSize()
                 .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift.toPx() }
                 .shadow(elev, shape, clip = false)
                 .clip(shape)
-                .background(Color(0xFF1C1C22))
-                .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocus() }
-                .clickable(remember { MutableInteractionSource() }, null) { onClick() },
+                .background(Color(0xFF1C1C22)),
             contentAlignment = Alignment.Center
         ) {
             if (app.banner != null) {
@@ -252,6 +262,7 @@ private fun AppTile(app: TvApp, modifier: Modifier, onFocus: () -> Unit, onClick
                     .border(1.dp, Color.White.copy(alpha = 0.22f), shape)
             )
         }
+        }
         Spacer(Modifier.height(12.dp))
         Text(
             app.label, color = White.copy(alpha = sheen), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
@@ -266,14 +277,18 @@ private fun Pill(label: String, onClick: () -> Unit) {
     val s by animateFloatAsState(if (f) 1.08f else 1f, Smooth, label = "pill")
     Box(
         Modifier
-            .graphicsLayer { scaleX = s; scaleY = s }
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (f) White else Glass)
             .onFocusChanged { f = it.isFocused }
             .clickable(remember { MutableInteractionSource() }, null) { onClick() }
-            .padding(horizontal = 13.dp, vertical = 6.dp)
     ) {
-        Text(label, color = if (f) Color.Black else White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        Box(
+            Modifier
+                .graphicsLayer { scaleX = s; scaleY = s }
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (f) White else Glass)
+                .padding(horizontal = 13.dp, vertical = 6.dp)
+        ) {
+            Text(label, color = if (f) Color.Black else White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        }
     }
 }
 
@@ -334,13 +349,18 @@ private fun WallThumb(res: Int, name: String, selected: Boolean, modifier: Modif
         Box(
             modifier
                 .size(92.dp, 52.dp)
-                .graphicsLayer { scaleX = s; scaleY = s }
-                .clip(RoundedCornerShape(9.dp))
-                .border(if (selected || f) 2.dp else 1.dp, if (selected || f) White else White.copy(alpha = 0.15f), RoundedCornerShape(9.dp))
                 .onFocusChanged { f = it.isFocused }
                 .clickable(remember { MutableInteractionSource() }, null) { onClick() }
         ) {
-            Image(painterResource(res), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { scaleX = s; scaleY = s }
+                    .clip(RoundedCornerShape(9.dp))
+                    .border(if (selected || f) 2.dp else 1.dp, if (selected || f) White else White.copy(alpha = 0.15f), RoundedCornerShape(9.dp))
+            ) {
+                Image(painterResource(res), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
         }
         Text(name, color = if (selected) White else Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
     }
