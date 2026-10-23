@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        state = LauncherState(this)
+        state = LauncherState(this, onReady = { HomeRedirectService.instance?.hideOverlay() })
         state.reload()
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
@@ -34,8 +34,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         state.refreshPrefs()
-        // Die echte Activity ist da - das Uebergangs-Overlay des Home-Dienstes wird nicht mehr gebraucht
-        HomeRedirectService.instance?.hideOverlay()
+        // Das Uebergangs-Overlay des Home-Dienstes wird entfernt, sobald dieser Bildschirm fertig ist (state.ready)
     }
 
     override fun onDestroy() {

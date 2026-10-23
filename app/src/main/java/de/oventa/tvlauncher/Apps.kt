@@ -34,6 +34,9 @@ val DEFAULT_VISIBLE = listOf(
 
 object Apps {
 
+    /** Zuletzt geladene Liste - Overlay und Activity starten damit ohne Wartezeit. */
+    @Volatile var cache: List<TvApp> = emptyList()
+
     fun load(context: Context): List<TvApp> {
         val pm = context.packageManager
         val result = LinkedHashMap<String, TvApp>()
@@ -57,7 +60,9 @@ object Apps {
                 )
             }
         }
-        return result.values.sortedBy { it.label.lowercase() }
+        val list = result.values.sortedBy { it.label.lowercase() }
+        cache = list
+        return list
     }
 
     fun launch(context: Context, pkg: String): Boolean {

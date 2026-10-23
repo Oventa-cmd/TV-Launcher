@@ -89,7 +89,7 @@ fun LauncherScreen(state: LauncherState) {
     val wallpaper = state.wallpaper.value
     val resumeTick = state.tick.value
     var settingsOpen by remember { mutableStateOf(false) }
-    var focusedLabel by remember { mutableStateOf("") }
+    var focusedLabel by remember { mutableStateOf(LauncherMemory.focusedLabel) }
     val firstTile = remember { FocusRequester() }
     val gear = remember { FocusRequester() }
     val firstPill = remember { FocusRequester() }
@@ -97,10 +97,21 @@ fun LauncherScreen(state: LauncherState) {
     val byPkg = apps.associateBy { it.packageName }
     val shown = visible.mapNotNull { byPkg[it] }
 
+    // Zuletzt gewaehlte Kachel merken (geteilt zwischen Overlay und Activity), damit der Wechsel nahtlos ist
+    val targetPkg = LauncherMemory.focusedPkg?.takeIf { p -> shown.any { it.packageName == p } } ?: shown.firstOrNull()?.packageName
+
     LaunchedEffect(shown.size, resumeTick, settingsOpen) {
         if (!settingsOpen && shown.isNotEmpty()) {
             delay(60)
             try { firstTile.requestFocus() } catch (_: Exception) { }
+        }
+    }
+
+    // Erst wenn alles steht und die Animationen durch sind, darf das Overlay verschwinden
+    LaunchedEffect(shown.isNotEmpty(), resumeTick) {
+        if (shown.isNotEmpty()) {
+            delay(700)
+            state.ready()
         }
     }
 
@@ -163,12 +174,12 @@ fun LauncherScreen(state: LauncherState) {
                     shown.forEachIndexed { idx, app ->
                         AppTile(
                             app = app,
-                            modifier = (if (idx == 0) Modifier.focusRequester(firstTile) else Modifier)
+                            modifier = (if (app.packageName == targetPkg) Modifier.focusRequester(firstTile) else Modifier)
                                 .focusProperties {
                                     up = gear
                                     if (showInputs && inputs.isNotEmpty()) down = firstPill
                                 },
-                            onFocus = { focusedLabel = app.label },
+                            onFocus = { focusedLabel = app.label; LauncherMemory.focusedPkg = app.packageName; LauncherMemory.focusedLabel = app.label },
                             onClick = { state.launch(app.packageName) }
                         )
                     }

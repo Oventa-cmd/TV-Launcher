@@ -10,11 +10,21 @@ import androidx.compose.runtime.mutableStateOf
  * Gemeinsamer Zustand fuer den Startbildschirm - genutzt von der Activity und vom
  * Overlay des Home-Dienstes. Einstellungen liegen in den SharedPreferences.
  */
-class LauncherState(private val ctx: Context, private val onLeave: () -> Unit = {}) {
+/** Gemeinsame Erinnerung von Overlay und Activity (gleicher Prozess). */
+object LauncherMemory {
+    @Volatile var focusedPkg: String? = null
+    @Volatile var focusedLabel: String = ""
+}
+
+class LauncherState(
+    private val ctx: Context,
+    private val onLeave: () -> Unit = {},
+    private val onReady: () -> Unit = {}
+) {
     private val prefs = Prefs(ctx)
     private val main = Handler(Looper.getMainLooper())
 
-    val apps = mutableStateOf<List<TvApp>>(emptyList())
+    val apps = mutableStateOf(Apps.cache)
     val inputs = mutableStateOf<List<TvInput>>(emptyList())
     val visible = mutableStateOf(prefs.visible)
     val wallpaper = mutableStateOf(prefs.wallpaper)
@@ -35,6 +45,8 @@ class LauncherState(private val ctx: Context, private val onLeave: () -> Unit = 
             main.post { apps.value = a; inputs.value = i }
         }.start()
     }
+
+    fun ready() = onReady()
 
     fun launch(pkg: String) { Apps.launch(ctx, pkg); onLeave() }
 
