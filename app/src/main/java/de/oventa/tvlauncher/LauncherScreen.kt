@@ -163,9 +163,7 @@ fun LauncherScreen(
                             modifier = (if (idx == 0) Modifier.focusRequester(firstTile) else Modifier)
                                 .focusProperties {
                                     up = gear
-                                    down = if (showInputs && inputs.isNotEmpty()) firstPill else FocusRequester.Cancel
-                                    if (idx == 0) left = FocusRequester.Cancel
-                                    if (idx == shown.size - 1) right = FocusRequester.Cancel
+                                    if (showInputs && inputs.isNotEmpty()) down = firstPill
                                 },
                             onFocus = { focusedLabel = app.label },
                             onClick = { Apps.launch(activity, app.packageName) }
