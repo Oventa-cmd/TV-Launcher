@@ -50,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -93,6 +94,7 @@ fun LauncherScreen(
     var focusedLabel by remember { mutableStateOf("") }
     val firstTile = remember { FocusRequester() }
     val gear = remember { FocusRequester() }
+    val firstPill = remember { FocusRequester() }
 
     val byPkg = apps.associateBy { it.packageName }
     val shown = visible.mapNotNull { byPkg[it] }
@@ -125,7 +127,7 @@ fun LauncherScreen(
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f)))
 
         Column(Modifier.fillMaxSize().padding(start = 75.dp, end = 75.dp, top = 34.dp, bottom = 44.dp)) {
-            TopBar(onSettings = { settingsOpen = true }, gear = gear)
+            TopBar(onSettings = { settingsOpen = true }, gear = gear, firstTileRef = if (shown.isNotEmpty()) firstTile else null)
 
             Spacer(Modifier.weight(1f))
 
@@ -158,7 +160,13 @@ fun LauncherScreen(
                     shown.forEachIndexed { idx, app ->
                         AppTile(
                             app = app,
-                            modifier = if (idx == 0) Modifier.focusRequester(firstTile) else Modifier,
+                            modifier = (if (idx == 0) Modifier.focusRequester(firstTile) else Modifier)
+                                .focusProperties {
+                                    up = gear
+                                    down = if (showInputs && inputs.isNotEmpty()) firstPill else FocusRequester.Cancel
+                                    if (idx == 0) left = FocusRequester.Cancel
+                                    if (idx == shown.size - 1) right = FocusRequester.Cancel
+                                },
                             onFocus = { focusedLabel = app.label },
                             onClick = { Apps.launch(activity, app.packageName) }
                         )
@@ -170,7 +178,9 @@ fun LauncherScreen(
                 Spacer(Modifier.height(22.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Eingänge", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(end = 4.dp))
-                    inputs.forEach { inp -> Pill(inp.label) { Apps.openInput(activity, inp.id) } }
+                    inputs.forEachIndexed { i, inp ->
+                        Pill(inp.label, if (i == 0) Modifier.focusRequester(firstPill).focusProperties { up = firstTile } else Modifier.focusProperties { up = firstTile }) { Apps.openInput(activity, inp.id) }
+                    }
                 }
             }
         }
@@ -187,7 +197,7 @@ fun LauncherScreen(
 }
 
 @Composable
-private fun TopBar(onSettings: () -> Unit, gear: FocusRequester) {
+private fun TopBar(onSettings: () -> Unit, gear: FocusRequester, firstTileRef: FocusRequester?) {
     val now by produceState(initialValue = Date()) {
         while (true) { value = Date(); delay(5_000) }
     }
@@ -200,6 +210,7 @@ private fun TopBar(onSettings: () -> Unit, gear: FocusRequester) {
             Modifier
                 .size(32.dp)
                 .focusRequester(gear)
+                .focusProperties { down = firstTileRef ?: FocusRequester.Default }
                 .onFocusChanged { f = it.isFocused }
                 .clickable(remember { MutableInteractionSource() }, null) { onSettings() }
         ) {
@@ -272,11 +283,11 @@ private fun AppTile(app: TvApp, modifier: Modifier, onFocus: () -> Unit, onClick
 }
 
 @Composable
-private fun Pill(label: String, onClick: () -> Unit) {
+private fun Pill(label: String, modifier: Modifier, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     val s by animateFloatAsState(if (f) 1.08f else 1f, Smooth, label = "pill")
     Box(
-        Modifier
+        modifier
             .onFocusChanged { f = it.isFocused }
             .clickable(remember { MutableInteractionSource() }, null) { onClick() }
     ) {
