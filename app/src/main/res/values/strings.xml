@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Home</string>
+    <string name="service_name">Home-Taste für Home</string>
+    <string name="service_description">Öffnet diesen Launcher, wenn die Amazon-Startseite erscheint. Liest keine Bildschirminhalte.</string>
+</resources>
