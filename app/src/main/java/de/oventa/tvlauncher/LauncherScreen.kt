@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -153,7 +154,9 @@ fun LauncherScreen(
                 Text("Keine Apps ausgewählt – Menü-Taste drücken.", color = Muted, fontSize = 16.sp)
             } else {
                 Row(
-                    Modifier.fillMaxWidth().height(112.dp).horizontalScroll(rememberScrollState()),
+                    // Innenabstand im Scrollbereich, damit die vergroesserte Kachel nicht abgeschnitten wird
+                    Modifier.offset(x = (-14).dp).fillMaxWidth().height(112.dp)
+                        .horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp),
                     horizontalArrangement = Arrangement.spacedBy(18.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
@@ -283,21 +286,19 @@ private fun AppTile(app: TvApp, modifier: Modifier, onFocus: () -> Unit, onClick
 @Composable
 private fun Pill(label: String, modifier: Modifier, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
-    val s by animateFloatAsState(if (f) 1.08f else 1f, Smooth, label = "pill")
+    // Waechst nach rechts: echte Groessenaenderung, die folgenden Eingaenge ruecken weich nach
+    val padH by animateDpAsState(if (f) 20.dp else 13.dp, spring(0.75f, Spring.StiffnessMediumLow), label = "padH")
+    val padV by animateDpAsState(if (f) 9.dp else 6.dp, spring(0.75f, Spring.StiffnessMediumLow), label = "padV")
+    val fs by animateFloatAsState(if (f) 13f else 11f, Smooth, label = "fs")
     Box(
         modifier
             .onFocusChanged { f = it.isFocused }
             .clickable(remember { MutableInteractionSource() }, null) { onClick() }
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (f) White else Glass)
+            .padding(horizontal = padH, vertical = padV)
     ) {
-        Box(
-            Modifier
-                .graphicsLayer { scaleX = s; scaleY = s }
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (f) White else Glass)
-                .padding(horizontal = 13.dp, vertical = 6.dp)
-        ) {
-            Text(label, color = if (f) Color.Black else White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-        }
+        Text(label, color = if (f) Color.Black else White, fontSize = fs.sp, fontWeight = FontWeight.Medium)
     }
 }
 
