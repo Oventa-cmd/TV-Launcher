@@ -70,9 +70,43 @@ class HomeRedirectService : AccessibilityService() {
         return true
     }
 
+    @Volatile private var logThread: Thread? = null
+    @Volatile private var logProc: Process? = null
+    private var lastLogHome = 0L
+
+    /**
+     * Fire OS sperrt nach einem Home-Druck fremde App-Starts fuer ca. 5 Sekunden.
+     * Mit der (per adb gewaehrten) Berechtigung READ_LOGS erkennen wir das Druecken der
+     * Home-Taste schon im Systemlog, bevor die Sperre greift, und starten sofort.
+     * Ohne die Berechtigung sieht logcat nur eigene Zeilen - dann passiert hier nichts.
+     */
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        if (logThread != null) return
+        logThread = Thread {
+            try {
+                val p = Runtime.getRuntime().exec(arrayOf("logcat", "-v", "brief", "-T", "1", "*:I"))
+                logProc = p
+                p.inputStream.bufferedReader().useLines { lines ->
+                    for (l in lines) {
+                        if (l.contains("KEYCODE_HOME") && l.contains("ACTION_DOWN")) {
+                            val now = SystemClock.elapsedRealtime()
+                            if (now - lastLogHome < 700) continue
+                            lastLogHome = now
+                            if (System.currentTimeMillis() < Prefs(this).bypassUntil) continue
+                            start(force = true)
+                        }
+                    }
+                }
+            } catch (_: Exception) { }
+        }.apply { isDaemon = true; name = "home-log"; start() }
+    }
+
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        try { logProc?.destroy() } catch (_: Exception) { }
+        logThread = null
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
