@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 
 /**
@@ -13,6 +14,10 @@ import android.view.accessibility.AccessibilityEvent
  * keine Bildschirminhalte (canRetrieveWindowContent=false).
  * Fire OS holt die Amazon-Startseite nach einem Home-Druck oft noch einmal nach vorne,
  * deshalb wird kurz danach nachgeprueft und bei Bedarf erneut umgeleitet.
+ *
+ * Zusaetzlich wird die Home-Taste direkt abgefangen (onKeyEvent), bevor Fire OS sie verarbeitet.
+ * Sonst blockiert Android nach jedem Home-Druck fremde App-Starts fuer ca. 5 Sekunden.
+ * Kurz druecken = dieser Launcher, lang druecken (> 0,6 s) = Amazon-Startseite.
  */
 class HomeRedirectService : AccessibilityService() {
 
@@ -44,6 +49,25 @@ class HomeRedirectService : AccessibilityService() {
         val i = Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         try { startActivity(i) } catch (_: Exception) { }
+    }
+
+    private var homeDownAt = 0L
+
+    override fun onKeyEvent(event: KeyEvent?): Boolean {
+        if (event == null || event.keyCode != KeyEvent.KEYCODE_HOME) return false
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) homeDownAt = SystemClock.elapsedRealtime()
+            KeyEvent.ACTION_UP -> {
+                val held = SystemClock.elapsedRealtime() - homeDownAt
+                if (held > 600) {
+                    Prefs(this).bypassUntil = System.currentTimeMillis() + 2 * 60 * 1000
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                } else {
+                    start(force = true)
+                }
+            }
+        }
+        return true
     }
 
     override fun onInterrupt() {}
