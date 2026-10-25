@@ -32,6 +32,11 @@ val DEFAULT_VISIBLE = listOf(
     "org.xbmc.kodi"
 )
 
+/** Eigene Kacheln fuer Apps mit unschoenem Banner. */
+private val CUSTOM_BANNERS = mapOf(
+    "com.fgl27.twitch" to R.drawable.banner_live   // SmartTwitchTV
+)
+
 object Apps {
 
     /** Zuletzt geladene Liste - Overlay und Activity starten damit ohne Wartezeit. */
@@ -49,7 +54,8 @@ object Apps {
                 if (pkg == context.packageName || result.containsKey(pkg)) continue
                 val label = ri.loadLabel(pm)?.toString() ?: pkg
                 val bannerD: Drawable? = try {
-                    ri.activityInfo.loadBanner(pm) ?: ri.activityInfo.applicationInfo.loadBanner(pm)
+                    CUSTOM_BANNERS[pkg]?.let { context.getDrawable(it) }
+                        ?: ri.activityInfo.loadBanner(pm) ?: ri.activityInfo.applicationInfo.loadBanner(pm)
                 } catch (e: Exception) { null }
                 val iconD: Drawable? = try { ri.loadIcon(pm) } catch (e: Exception) { null }
                 result[pkg] = TvApp(
