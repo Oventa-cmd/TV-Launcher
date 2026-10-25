@@ -215,7 +215,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
 
             if (greetingOn) {
                 Spacer(Modifier.height(22.dp))
-                Greeting(userName, introP)
+                Greeting(introP, resumeTick)
             }
 
             Spacer(Modifier.weight(1f))
@@ -315,7 +315,7 @@ private fun TileRow(
         val tileW: Dp = fit.coerceIn(84.dp, 150.dp)
         val scrolls = fit < 84.dp
         val tileH = tileW * 9f / 16f
-        val rowMod = Modifier.fillMaxWidth().height(tileH + 44.dp)
+        val rowMod = Modifier.fillMaxWidth().height(tileH + 22.dp)
         Row(
             if (scrolls) rowMod.horizontalScroll(rememberScrollState()) else rowMod,
             horizontalArrangement = if (scrolls) Arrangement.spacedBy(gap) else Arrangement.spacedBy(gap, Alignment.Start),
@@ -371,22 +371,33 @@ private fun Wallpaper(wallpaper: Int, anims: Boolean) {
 }
 
 /**
- * "Guten Abend, Arne" fliegt Buchstabe fuer Buchstabe von unten herein und federt nach,
- * danach laeuft ein Lichtschimmer darueber. "Was möchtest du schauen?" gleitet von links nach.
+ * "Guten Abend" fliegt Buchstabe fuer Buchstabe von unten herein und federt nach,
+ * danach laeuft ein Lichtschimmer darueber. Nach 6 s blendet die Begruessung aus.
  */
 @Composable
-private fun Greeting(name: String, p: () -> Float) {
+private fun Greeting(p: () -> Float, tick: Int) {
     val hour by produceState(initialValue = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
         while (true) { delay(60_000); value = Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
     }
     val title = when (hour) {
-        in 5..10 -> "Guten Morgen, $name"
-        in 11..16 -> "Hallo $name"
-        in 17..21 -> "Guten Abend, $name"
-        else -> "Noch wach, $name?"
+        in 5..10 -> "Guten Morgen"
+        in 11..16 -> "Guten Mittag"
+        in 17..21 -> "Guten Abend"
+        else -> "Gute Nacht"
+    }
+    // Nach ein paar Sekunden sanft ausblenden; bei jedem Home-Druck wieder einblenden
+    val hide = remember { Animatable(0f) }
+    LaunchedEffect(tick) {
+        hide.snapTo(0f)
+        delay(GREETING_VISIBLE_MS)
+        hide.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
     }
     val step = (0.32f / title.length.coerceAtLeast(1)).coerceAtMost(0.03f)
-    Column {
+    Column(Modifier.graphicsLayer {
+        val h = hide.value
+        alpha = 1f - h
+        translationY = -h * 14.dp.toPx()
+    }) {
         Row(
             Modifier
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
@@ -423,19 +434,10 @@ private fun Greeting(name: String, p: () -> Float) {
                 )
             }
         }
-        Text(
-            "Was möchtest du schauen?",
-            color = Muted, fontSize = 18.sp, fontWeight = FontWeight.Medium,
-            modifier = Modifier
-                .padding(top = 2.dp)
-                .graphicsLayer {
-                    val a = seg(p(), 0.30f, 0.36f)
-                    alpha = a
-                    translationX = (1f - a) * -60.dp.toPx()
-                }
-        )
     }
 }
+
+private const val GREETING_VISIBLE_MS = 6_000L
 
 @Composable
 private fun TopBar(onSettings: () -> Unit, gear: FocusRequester, firstTileRef: FocusRequester?) {
@@ -542,11 +544,6 @@ private fun AppTile(app: TvApp, width: Dp, appear: () -> Float, modifier: Modifi
                 )
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            app.label, color = White.copy(alpha = 0.55f + 0.45f * sheen), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-            maxLines = 1, overflow = TextOverflow.Ellipsis
-        )
     }
 }
 
@@ -611,7 +608,7 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
         }
         Spacer(Modifier.height(18.dp))
         Section("Begrüßung & Effekte")
-        ToggleRow("Begrüßung „Hallo ${activity.userName.value}“", activity.greeting.value, { activity.setGreeting(!activity.greeting.value) }, null)
+        ToggleRow("Begrüßung (Guten Morgen …)", activity.greeting.value, { activity.setGreeting(!activity.greeting.value) }, null)
         ToggleRow("Klick-Sounds", activity.sounds.value, { activity.setSounds(!activity.sounds.value) }, null)
         ToggleRow("Animationen", activity.animations.value, { activity.setAnimations(!activity.animations.value) }, null)
         Spacer(Modifier.height(18.dp))
