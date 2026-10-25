@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Sounds.init(this)
         state = LauncherState(this, onReady = { HomeRedirectService.instance?.hideOverlay() })
         state.reload()
         val f = IntentFilter().apply {

@@ -18,6 +18,22 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("showInputs", true)
         set(v) { sp.edit().putBoolean("showInputs", v).apply() }
 
+    var greeting: Boolean
+        get() = sp.getBoolean("greeting", true)
+        set(v) { sp.edit().putBoolean("greeting", v).apply() }
+
+    var userName: String
+        get() = sp.getString("userName", "Arne") ?: "Arne"
+        set(v) { sp.edit().putString("userName", v).apply() }
+
+    var sounds: Boolean
+        get() = sp.getBoolean("sounds", true)
+        set(v) { sp.edit().putBoolean("sounds", v).apply() }
+
+    var animations: Boolean
+        get() = sp.getBoolean("animations", true)
+        set(v) { sp.edit().putBoolean("animations", v).apply() }
+
     /** Bis zu diesem Zeitpunkt leitet der Home-Dienst nicht um (um die Amazon-Startseite bewusst zu öffnen). */
     var bypassUntil: Long
         get() = sp.getLong("bypassUntil", 0L)

@@ -42,6 +42,7 @@ class HomeRedirectService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        Sounds.init(this)
         state = LauncherState(this) { /* App gestartet: Overlay bleibt, bis sie im Vordergrund ist */ }
         state.reload()
         startLogWatcher()

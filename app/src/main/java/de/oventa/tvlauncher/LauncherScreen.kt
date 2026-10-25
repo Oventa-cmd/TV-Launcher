@@ -3,6 +3,13 @@ package de.oventa.tvlauncher
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -43,10 +50,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -68,6 +80,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import android.os.SystemClock
+import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -79,6 +94,12 @@ private val White = Color.White
 private val Muted = Color.White.copy(alpha = 0.66f)
 private val Glass = Color.White.copy(alpha = 0.10f)
 private val Smooth = spring<Float>(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)
+private val Accent = Color(0xFF9CC8FF)
+private const val INTRO_MS = 1300
+
+/** Teilfortschritt [0..1] eines Abschnitts der Intro-Animation, mit weicher Kurve. */
+private fun seg(p: Float, start: Float, len: Float): Float =
+    FastOutSlowInEasing.transform(((p - start) / len).coerceIn(0f, 1f))
 
 @Composable
 fun LauncherScreen(state: LauncherState) {
@@ -88,6 +109,14 @@ fun LauncherScreen(state: LauncherState) {
     val inputs = if (showInputs) state.inputs.value else emptyList()
     val wallpaper = state.wallpaper.value
     val resumeTick = state.tick.value
+    val anims = state.animations.value
+    val greetingOn = state.greeting.value
+    val userName = state.userName.value
+    val scope = rememberCoroutineScope()
+    // Intro: Begruessung und Kacheln bauen sich gestaffelt auf. Overlay und Activity teilen sich
+    // eine Intro pro Home-Druck, damit beim Wechsel nichts doppelt abgespielt wird.
+    val intro = remember { Animatable(if (anims && !LauncherMemory.introRecent()) 0f else 1f) }
+    val introP: () -> Float = { intro.value }
     var settingsOpen by remember { mutableStateOf(false) }
     var focusedLabel by remember { mutableStateOf(LauncherMemory.focusedLabel) }
     val firstTile = remember { FocusRequester() }
@@ -107,10 +136,19 @@ fun LauncherScreen(state: LauncherState) {
         }
     }
 
+    LaunchedEffect(resumeTick) {
+        if (anims && LauncherMemory.claimIntro()) {
+            // Eigener Scope: ein zweiter Resume-Tick bricht die laufende Intro nicht ab
+            scope.launch { intro.snapTo(0f); intro.animateTo(1f, tween(INTRO_MS, easing = LinearEasing)) }
+        } else if (!intro.isRunning && intro.value < 1f) {
+            intro.snapTo(1f)
+        }
+    }
+
     // Erst wenn alles steht und die Animationen durch sind, darf das Overlay verschwinden
     LaunchedEffect(shown.isNotEmpty(), resumeTick) {
         if (shown.isNotEmpty()) {
-            delay(700)
+            delay(maxOf(700L, LauncherMemory.introRemaining(INTRO_MS) + 100L))
             state.ready()
         }
     }
@@ -120,29 +158,36 @@ fun LauncherScreen(state: LauncherState) {
             .fillMaxSize()
             .background(Color.Black)
             .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && e.key in NAV_KEYS) LauncherMemory.lastNavKey = SystemClock.uptimeMillis()
                 when {
-                    e.key == Key.Menu && e.type == KeyEventType.KeyUp -> { settingsOpen = !settingsOpen; true }
+                    e.key == Key.Menu && e.type == KeyEventType.KeyUp -> {
+                        settingsOpen = !settingsOpen
+                        if (settingsOpen) Sounds.open() else Sounds.close()
+                        true
+                    }
                     // Zurueck: schliesst die Einstellungen, verlaesst den Launcher aber nie
-                    e.key == Key.Back -> { if (e.type == KeyEventType.KeyUp && settingsOpen) settingsOpen = false; true }
+                    e.key == Key.Back -> {
+                        if (e.type == KeyEventType.KeyUp && settingsOpen) { settingsOpen = false; Sounds.close() }
+                        true
+                    }
                     else -> false
                 }
             }
     ) {
-        Crossfade(targetState = wallpaper.coerceIn(0, WALLPAPERS.size - 1), animationSpec = tween(600), label = "wall") { w ->
-            Image(
-                painter = painterResource(WALLPAPERS[w]),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+        Wallpaper(wallpaper, anims)
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f)))
 
         Column(Modifier.fillMaxSize().padding(start = 75.dp, end = 75.dp, top = 34.dp, bottom = 44.dp)) {
-            TopBar(onSettings = { settingsOpen = true }, gear = gear, firstTileRef = if (shown.isNotEmpty()) firstTile else null)
+            TopBar(onSettings = { settingsOpen = true; Sounds.open() }, gear = gear, firstTileRef = if (shown.isNotEmpty()) firstTile else null)
+
+            if (greetingOn) {
+                Spacer(Modifier.height(24.dp))
+                Greeting(userName, introP)
+            }
 
             Spacer(Modifier.weight(1f))
 
+            Column(Modifier.graphicsLayer { alpha = seg(introP(), 0.22f, 0.35f) }) {
             Text("AUSGEWÄHLT", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.5.sp)
             AnimatedContent(
                 targetState = focusedLabel,
@@ -153,11 +198,12 @@ fun LauncherScreen(state: LauncherState) {
             ) { t ->
                 Text(
                     t.ifEmpty { " " },
-                    color = White, fontSize = 52.sp, fontWeight = FontWeight.Bold,
+                    color = White, fontSize = if (greetingOn) 44.sp else 52.sp, fontWeight = FontWeight.Bold,
                     letterSpacing = (-1.5).sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
             Text("OK zum Öffnen · Menü-Taste für Einstellungen", color = Muted, fontSize = 14.sp)
+            }
 
             Spacer(Modifier.height(34.dp))
 
@@ -174,6 +220,7 @@ fun LauncherScreen(state: LauncherState) {
                     shown.forEachIndexed { idx, app ->
                         AppTile(
                             app = app,
+                            appear = { seg(introP(), 0.30f + idx * 0.06f, 0.38f) },
                             modifier = (if (app.packageName == targetPkg) Modifier.focusRequester(firstTile) else Modifier)
                                 .focusProperties {
                                     up = gear
@@ -224,7 +271,7 @@ private fun TopBar(onSettings: () -> Unit, gear: FocusRequester, firstTileRef: F
                 .size(32.dp)
                 .focusRequester(gear)
                 .focusProperties { down = firstTileRef ?: FocusRequester.Default }
-                .onFocusChanged { f = it.isFocused }
+                .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
                 .clickable(remember { MutableInteractionSource() }, null) { onSettings() }
         ) {
             Box(
@@ -245,22 +292,131 @@ private fun TopBar(onSettings: () -> Unit, gear: FocusRequester, firstTileRef: F
     }
 }
 
+private val NAV_KEYS = setOf(Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight)
+
+/** Hintergrund mit langsamer "Ken Burns"-Bewegung (abschaltbar). */
 @Composable
-private fun AppTile(app: TvApp, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
+private fun Wallpaper(wallpaper: Int, anims: Boolean) {
+    val drift = if (anims) {
+        rememberInfiniteTransition(label = "drift").animateFloat(
+            initialValue = 0f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(45_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "d"
+        )
+    } else null
+    Crossfade(
+        targetState = wallpaper.coerceIn(0, WALLPAPERS.size - 1),
+        animationSpec = tween(600),
+        label = "wall",
+        modifier = Modifier.fillMaxSize().graphicsLayer {
+            val d = drift?.value ?: return@graphicsLayer
+            val s = 1.05f + 0.04f * d
+            scaleX = s; scaleY = s
+            translationX = (d - 0.5f) * 28.dp.toPx()
+            translationY = (0.5f - d) * 10.dp.toPx()
+        }
+    ) { w ->
+        Image(
+            painter = painterResource(WALLPAPERS[w]),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+/** "Guten Abend, Arne" + "Was möchtest du schauen?" mit Einblenden und einem Lichtschimmer. */
+@Composable
+private fun Greeting(name: String, p: () -> Float) {
+    val hour by produceState(initialValue = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+        while (true) { delay(60_000); value = Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+    }
+    val title = when (hour) {
+        in 5..10 -> "Guten Morgen, $name"
+        in 11..16 -> "Hallo $name"
+        in 17..21 -> "Guten Abend, $name"
+        else -> "Noch wach, $name?"
+    }
+    Column {
+        Text(
+            title,
+            color = White, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.8).sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .graphicsLayer {
+                    val a = seg(p(), 0f, 0.38f)
+                    alpha = a
+                    translationY = (1f - a) * 18.dp.toPx()
+                    compositingStrategy = CompositingStrategy.Offscreen
+                }
+                .drawWithContent {
+                    drawContent()
+                    // Ein heller Schimmer laeuft einmal ueber den Text
+                    val s = seg(p(), 0.25f, 0.6f)
+                    if (s in 0.001f..0.999f) {
+                        val band = size.width * 0.35f
+                        val x = -band + (size.width + 2 * band) * s
+                        drawRect(
+                            Brush.linearGradient(
+                                listOf(Color.Transparent, Accent, Color.Transparent),
+                                start = Offset(x - band / 2, 0f), end = Offset(x + band / 2, size.height)
+                            ),
+                            blendMode = BlendMode.SrcAtop
+                        )
+                    }
+                }
+        )
+        Text(
+            "Was möchtest du schauen?",
+            color = Muted, fontSize = 18.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .graphicsLayer {
+                    val a = seg(p(), 0.12f, 0.38f)
+                    alpha = a
+                    translationY = (1f - a) * 12.dp.toPx()
+                }
+        )
+    }
+}
+
+@Composable
+private fun AppTile(app: TvApp, appear: () -> Float, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.14f else 1f, Smooth, label = "scale")
+    var pressed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val scale by animateFloatAsState(
+        when { pressed -> 1.03f; focused -> 1.14f; else -> 1f },
+        if (pressed) tween(90) else Smooth, label = "scale"
+    )
     val lift by animateDpAsState(if (focused) (-6).dp else 0.dp, spring(0.72f, Spring.StiffnessMediumLow), label = "lift")
     val elev by animateDpAsState(if (focused) 22.dp else 6.dp, tween(260), label = "elev")
     val sheen by animateFloatAsState(if (focused) 1f else 0f, tween(260), label = "sheen")
     val shape = RoundedCornerShape(11.dp)
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(120.dp)) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(120.dp).graphicsLayer {
+            // Gestaffeltes Hereinfahren beim Intro
+            val a = appear()
+            alpha = a
+            translationY = (1f - a) * 34.dp.toPx()
+            val s = 0.9f + 0.1f * a
+            scaleX = s; scaleY = s
+        }
+    ) {
         // Fokus-Ziel ohne Transformation, damit die Pfeiltasten-Navigation die echte Position nutzt
         Box(
             modifier
                 .size(120.dp, 68.dp)
-                .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocus() }
-                .clickable(remember { MutableInteractionSource() }, null) { onClick() }
+                .onFocusChanged { focused = it.isFocused; if (it.isFocused) { onFocus(); Sounds.nav() } }
+                .clickable(remember { MutableInteractionSource() }, null) {
+                    if (pressed) return@clickable
+                    Sounds.select()
+                    pressed = true
+                    // Kurz eindruecken, dann starten
+                    scope.launch { delay(130); onClick(); delay(400); pressed = false }
+                }
         ) {
         Box(
             Modifier
@@ -304,8 +460,8 @@ private fun Pill(label: String, modifier: Modifier, onClick: () -> Unit) {
     val fs by animateFloatAsState(if (f) 13f else 11f, Smooth, label = "fs")
     Box(
         modifier
-            .onFocusChanged { f = it.isFocused }
-            .clickable(remember { MutableInteractionSource() }, null) { onClick() }
+            .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
+            .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
             .clip(RoundedCornerShape(14.dp))
             .background(if (f) White else Glass)
             .padding(horizontal = padH, vertical = padV)
@@ -351,6 +507,11 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
             )
         }
         Spacer(Modifier.height(18.dp))
+        Section("Begrüßung & Effekte")
+        ToggleRow("Begrüßung „Hallo ${activity.userName.value}“", activity.greeting.value, { activity.setGreeting(!activity.greeting.value) }, null)
+        ToggleRow("Klick-Sounds", activity.sounds.value, { activity.setSounds(!activity.sounds.value) }, null)
+        ToggleRow("Animationen", activity.animations.value, { activity.setAnimations(!activity.animations.value) }, null)
+        Spacer(Modifier.height(18.dp))
         Section("System")
         ToggleRow("Eingänge (HDMI) anzeigen", showInputs, { activity.setShowInputs(!showInputs) }, null)
         ActionRow("Fire TV Einstellungen") { activity.openFireSettings() }
@@ -371,8 +532,8 @@ private fun WallThumb(res: Int, name: String, selected: Boolean, modifier: Modif
         Box(
             modifier
                 .size(92.dp, 52.dp)
-                .onFocusChanged { f = it.isFocused }
-                .clickable(remember { MutableInteractionSource() }, null) { onClick() }
+                .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
+                .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
         ) {
             Box(
                 Modifier
@@ -398,13 +559,15 @@ private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: 
             .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(if (f) White.copy(alpha = 0.16f) else Color.Transparent)
-            .onFocusChanged { f = it.isFocused }
+            .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
             .onPreviewKeyEvent { e ->
                 if (onMove != null && on && e.type == KeyEventType.KeyDown && (e.key == Key.DirectionLeft || e.key == Key.DirectionRight)) {
+                    LauncherMemory.lastNavKey = SystemClock.uptimeMillis()
+                    Sounds.nav()
                     onMove(if (e.key == Key.DirectionLeft) -1 else 1); true
                 } else false
             }
-            .clickable(remember { MutableInteractionSource() }, null) { onToggle() }
+            .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onToggle() }
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -428,8 +591,8 @@ private fun ActionRow(label: String, onClick: () -> Unit) {
             .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(if (f) White.copy(alpha = 0.16f) else Color.Transparent)
-            .onFocusChanged { f = it.isFocused }
-            .clickable(remember { MutableInteractionSource() }, null) { onClick() }
+            .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
+            .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

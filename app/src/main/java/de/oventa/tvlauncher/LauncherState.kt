@@ -14,6 +14,21 @@ import androidx.compose.runtime.mutableStateOf
 object LauncherMemory {
     @Volatile var focusedPkg: String? = null
     @Volatile var focusedLabel: String = ""
+    /** Zeitpunkt der letzten Pfeiltaste (fuer den Navigations-Klick). */
+    @Volatile var lastNavKey: Long = 0L
+    /** Zeitpunkt der letzten Intro-Animation; Overlay und Activity spielen sie nur einmal. */
+    @Volatile private var introAt: Long = 0L
+
+    fun introRecent() = android.os.SystemClock.uptimeMillis() - introAt < 4000
+
+    fun introRemaining(durationMs: Int): Long =
+        (durationMs - (android.os.SystemClock.uptimeMillis() - introAt)).coerceAtLeast(0L)
+
+    fun claimIntro(): Boolean {
+        if (introRecent()) return false
+        introAt = android.os.SystemClock.uptimeMillis()
+        return true
+    }
 }
 
 class LauncherState(
@@ -29,14 +44,31 @@ class LauncherState(
     val visible = mutableStateOf(prefs.visible)
     val wallpaper = mutableStateOf(prefs.wallpaper)
     val showInputs = mutableStateOf(prefs.showInputs)
+    val greeting = mutableStateOf(prefs.greeting)
+    val userName = mutableStateOf(prefs.userName)
+    val sounds = mutableStateOf(prefs.sounds)
+    val animations = mutableStateOf(prefs.animations)
     val tick = mutableStateOf(0)
+
+    init { Sounds.enabled = prefs.sounds }
 
     fun refreshPrefs() {
         visible.value = prefs.visible
         wallpaper.value = prefs.wallpaper
         showInputs.value = prefs.showInputs
+        greeting.value = prefs.greeting
+        userName.value = prefs.userName
+        sounds.value = prefs.sounds
+        animations.value = prefs.animations
+        Sounds.enabled = prefs.sounds
         tick.value = tick.value + 1
     }
+
+    fun setGreeting(b: Boolean) { greeting.value = b; prefs.greeting = b }
+
+    fun setSounds(b: Boolean) { sounds.value = b; prefs.sounds = b; Sounds.enabled = b }
+
+    fun setAnimations(b: Boolean) { animations.value = b; prefs.animations = b }
 
     fun reload() {
         Thread {
