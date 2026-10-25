@@ -163,6 +163,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
     val intro = remember { Animatable(if (anims && (isOverlay || !LauncherMemory.introRecent())) 0f else 1f) }
     val introP: () -> Float = { intro.value }
     var settingsOpen by remember { mutableStateOf(false) }
+    var appsPage by remember { mutableStateOf(false) }
     var focusedLabel by remember { mutableStateOf(LauncherMemory.focusedLabel) }
     val firstTile = remember { FocusRequester() }
     val gear = remember { FocusRequester() }
@@ -211,12 +212,16 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                 when {
                     e.key == Key.Menu && e.type == KeyEventType.KeyUp -> {
                         settingsOpen = !settingsOpen
+                        appsPage = false
                         if (settingsOpen) Sounds.open() else Sounds.close()
                         true
                     }
                     // Zurueck: schliesst die Einstellungen, verlaesst den Launcher aber nie
                     e.key == Key.Back -> {
-                        if (e.type == KeyEventType.KeyUp && settingsOpen) { settingsOpen = false; Sounds.close() }
+                        if (e.type == KeyEventType.KeyUp && settingsOpen) {
+                            if (appsPage) appsPage = false else settingsOpen = false
+                            Sounds.close()
+                        }
                         true
                     }
                     else -> false
@@ -304,7 +309,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
             exit = slideOutHorizontally(tween(260)) { it } + fadeOut(tween(200)),
             modifier = Modifier.align(Alignment.CenterEnd)
         ) {
-            SettingsPanel(state, apps, visible, wallpaper, showInputs)
+            SettingsPanel(state, apps, visible, wallpaper, showInputs, appsPage) { appsPage = it; Sounds.open() }
         }
     }
 }
@@ -589,9 +594,25 @@ private fun Pill(label: String, modifier: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: List<String>, wallpaper: Int, showInputs: Boolean) {
+private fun SettingsPanel(
+    activity: LauncherState, apps: List<TvApp>, visible: List<String>, wallpaper: Int, showInputs: Boolean,
+    appsPage: Boolean, setAppsPage: (Boolean) -> Unit
+) {
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { delay(80); try { first.requestFocus() } catch (_: Exception) { } }
+    val appsEntry = remember { FocusRequester() }
+    val firstApp = remember { FocusRequester() }
+    var wasInApps by remember { mutableStateOf(false) }
+    LaunchedEffect(appsPage) {
+        delay(80)
+        try {
+            when {
+                appsPage -> firstApp.requestFocus()
+                wasInApps -> appsEntry.requestFocus()
+                else -> first.requestFocus()
+            }
+        } catch (_: Exception) { }
+        wasInApps = appsPage
+    }
     val ordered = visible.mapNotNull { p -> apps.firstOrNull { it.packageName == p } } + apps.filter { it.packageName !in visible }
     val shape = RoundedCornerShape(24.dp)
     val learning = LauncherMemory.learningKey.value
@@ -609,6 +630,19 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
             .padding(horizontal = 26.dp, vertical = 26.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        if (appsPage) {
+            Text("‹  Apps", color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("OK = ein/aus · ◀ ▶ = verschieben · Zurück = Einstellungen", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
+            ordered.forEachIndexed { i, app ->
+                ToggleRow(
+                    label = app.label,
+                    on = app.packageName in visible,
+                    onToggle = { activity.toggleVisible(app.packageName) },
+                    onMove = { d -> activity.move(app.packageName, d) },
+                    modifier = if (i == 0) Modifier.focusRequester(firstApp) else Modifier
+                )
+            }
+        } else {
         Text("Einstellungen", color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(18.dp))
         Section("Hintergrund")
@@ -623,16 +657,8 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
             activity.setWallRotate(ROTATE_STEPS[(ROTATE_STEPS.indexOf(rot).coerceAtLeast(0) + 1) % ROTATE_STEPS.size])
         }
         Spacer(Modifier.height(18.dp))
-        Section("Apps auf dem Startbildschirm")
-        Text("OK = ein/aus · ◀ ▶ = verschieben", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(bottom = 6.dp))
-        ordered.forEach { app ->
-            ToggleRow(
-                label = app.label,
-                on = app.packageName in visible,
-                onToggle = { activity.toggleVisible(app.packageName) },
-                onMove = { d -> activity.move(app.packageName, d) }
-            )
-        }
+        Section("Startbildschirm")
+        ActionRow("Apps ein-/ausblenden", "${visible.count { p -> apps.any { it.packageName == p } }} sichtbar", Modifier.focusRequester(appsEntry)) { setAppsPage(true) }
         Spacer(Modifier.height(18.dp))
         Section("Begrüßung & Effekte")
         ToggleRow("Begrüßung (Guten Morgen …)", activity.greeting.value, { activity.setGreeting(!activity.greeting.value) }, null)
@@ -653,6 +679,7 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
         ToggleRow("Eingänge (HDMI) anzeigen", showInputs, { activity.setShowInputs(!showInputs) }, null)
         ActionRow("Fire TV Einstellungen", null) { activity.openFireSettings() }
         ActionRow("Amazon-Startseite öffnen", null) { activity.openAmazonHome() }
+        }
     }
 }
 
@@ -687,7 +714,7 @@ private fun WallThumb(res: Int, name: String, selected: Boolean, modifier: Modif
 }
 
 @Composable
-private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: ((Int) -> Unit)?) {
+private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: ((Int) -> Unit)?, modifier: Modifier = Modifier) {
     var f by remember { mutableStateOf(false) }
     val knob by animateDpAsState(if (on) 15.dp else 0.dp, spring(0.7f, Spring.StiffnessMedium), label = "knob")
     val shape = RoundedCornerShape(10.dp)
@@ -695,6 +722,7 @@ private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: 
         Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
+            .then(modifier)
             .then(if (f) Modifier.glass(shape, focused = true) else Modifier)
             .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
             .onPreviewKeyEvent { e ->
@@ -720,13 +748,14 @@ private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: 
 }
 
 @Composable
-private fun ActionRow(label: String, value: String?, onClick: () -> Unit) {
+private fun ActionRow(label: String, value: String?, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
+            .then(modifier)
             .then(if (f) Modifier.glass(shape, focused = true) else Modifier)
             .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
             .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
