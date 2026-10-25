@@ -129,6 +129,13 @@ class LauncherState(
 
     fun setShowInputs(b: Boolean) { showInputs.value = b; prefs.showInputs = b }
 
+    /** Startet den aktiven Bildschirmschoner sofort (Vorschau). */
+    fun startScreensaver() {
+        try {
+            ctx.startActivity(Intent().setClassName("com.android.systemui", "com.android.systemui.Somnambulator").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) { }
+    }
+
     fun openFireSettings() {
         prefs.bypassUntil = System.currentTimeMillis() + 2 * 60 * 1000
         try {

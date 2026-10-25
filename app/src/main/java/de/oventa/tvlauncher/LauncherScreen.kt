@@ -648,6 +648,7 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
         if (menuKey != 0 && !learning && activity.serviceActive) ActionRow("Hauptmenü-Taste ausschalten", null) { activity.disableMenuKey() }
         Spacer(Modifier.height(18.dp))
         Section("System")
+        ActionRow("Bildschirmschoner jetzt starten", null) { activity.startScreensaver() }
         ToggleRow("Temperatur Aachen", activity.weather.value, { activity.setWeather(!activity.weather.value) }, null)
         ToggleRow("Eingänge (HDMI) anzeigen", showInputs, { activity.setShowInputs(!showInputs) }, null)
         ActionRow("Fire TV Einstellungen", null) { activity.openFireSettings() }
