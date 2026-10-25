@@ -58,6 +58,8 @@ class LauncherState(
     val visible = mutableStateOf(prefs.visible)
     val wallpaper = mutableStateOf(prefs.wallpaper)
     val showInputs = mutableStateOf(prefs.showInputs)
+    val wallRotate = mutableStateOf(prefs.wallRotate)
+    val weather = mutableStateOf(prefs.weather)
     val greeting = mutableStateOf(prefs.greeting)
     val userName = mutableStateOf(prefs.userName)
     val sounds = mutableStateOf(prefs.sounds)
@@ -73,6 +75,8 @@ class LauncherState(
     fun refreshPrefs() {
         visible.value = prefs.visible
         wallpaper.value = prefs.wallpaper
+        wallRotate.value = prefs.wallRotate
+        weather.value = prefs.weather
         showInputs.value = prefs.showInputs
         greeting.value = prefs.greeting
         userName.value = prefs.userName
@@ -120,6 +124,8 @@ class LauncherState(
     }
 
     fun setWallpaper(i: Int) { wallpaper.value = i; prefs.wallpaper = i }
+    fun setWallRotate(m: Int) { wallRotate.value = m; prefs.wallRotate = m }
+    fun setWeather(b: Boolean) { weather.value = b; prefs.weather = b }
 
     fun setShowInputs(b: Boolean) { showInputs.value = b; prefs.showInputs = b }
 

@@ -92,8 +92,12 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-val WALLPAPERS = listOf(R.drawable.wall_dark, R.drawable.wall_graphite, R.drawable.wall_blue)
-val WALL_NAMES = listOf("Dunkel", "Graphit", "Nachtblau")
+val WALLPAPERS = listOf(
+    R.drawable.wall_dark, R.drawable.wall_graphite, R.drawable.wall_blue, R.drawable.wall_sunset,
+    R.drawable.wall_forest, R.drawable.wall_aurora, R.drawable.wall_bordeaux, R.drawable.wall_ocean
+)
+val WALL_NAMES = listOf("Dunkel", "Graphit", "Nachtblau", "Abendrot", "Wald", "Polarlicht", "Bordeaux", "Ozean")
+val ROTATE_STEPS = listOf(0, 5, 15, 60)
 
 private val White = Color.White
 private val Muted = Color.White.copy(alpha = 0.66f)
@@ -142,6 +146,18 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
     val greetingOn = state.greeting.value
     val userName = state.userName.value
     val scope = rememberCoroutineScope()
+    val rotateMin = state.wallRotate.value
+    val weatherOn = state.weather.value
+    // Hintergrund automatisch der Reihe nach wechseln
+    LaunchedEffect(rotateMin) {
+        if (rotateMin > 0) while (true) {
+            delay(rotateMin * 60_000L)
+            state.setWallpaper((state.wallpaper.value + 1) % WALLPAPERS.size)
+        }
+    }
+    LaunchedEffect(weatherOn, resumeTick) {
+        if (weatherOn) while (true) { Weather.refreshIfStale(); delay(5 * 60_000L) }
+    }
     // Intro bei jedem Aufruf des Startbildschirms. Overlay und Activity teilen sich eine Intro
     // pro Aufruf, damit beim Wechsel zwischen beiden nichts doppelt abgespielt wird.
     val intro = remember { Animatable(if (anims && (isOverlay || !LauncherMemory.introRecent())) 0f else 1f) }
@@ -211,7 +227,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.10f), Color.Black.copy(alpha = 0.40f)))))
 
         Column(Modifier.fillMaxSize().padding(start = 60.dp, end = 60.dp, top = 30.dp, bottom = 30.dp)) {
-            TopBar(onSettings = { settingsOpen = true; Sounds.open() }, gear = gear, firstTileRef = if (shown.isNotEmpty()) firstTile else null)
+            TopBar(weather = if (weatherOn) Weather.current.value else null, onSettings = { settingsOpen = true; Sounds.open() }, gear = gear, firstTileRef = if (shown.isNotEmpty()) firstTile else null)
 
             if (greetingOn) {
                 Spacer(Modifier.height(22.dp))
@@ -351,7 +367,7 @@ private fun Wallpaper(wallpaper: Int, anims: Boolean) {
     } else null
     Crossfade(
         targetState = wallpaper.coerceIn(0, WALLPAPERS.size - 1),
-        animationSpec = tween(600),
+        animationSpec = tween(1800),
         label = "wall",
         modifier = Modifier.fillMaxSize().graphicsLayer {
             val d = drift?.value ?: return@graphicsLayer
@@ -440,7 +456,7 @@ private fun Greeting(p: () -> Float, tick: Int) {
 private const val GREETING_VISIBLE_MS = 6_000L
 
 @Composable
-private fun TopBar(onSettings: () -> Unit, gear: FocusRequester, firstTileRef: FocusRequester?) {
+private fun TopBar(weather: Weather.Now?, onSettings: () -> Unit, gear: FocusRequester, firstTileRef: FocusRequester?) {
     val now by produceState(initialValue = Date()) {
         while (true) { value = Date(); delay(5_000) }
     }
@@ -472,6 +488,12 @@ private fun TopBar(onSettings: () -> Unit, gear: FocusRequester, firstTileRef: F
             Modifier.glass(RoundedCornerShape(18.dp)).padding(horizontal = 16.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (weather != null) {
+                Text(weather.symbol, color = White, fontSize = 15.sp)
+                Spacer(Modifier.width(5.dp))
+                Text("${weather.tempC}°", color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Box(Modifier.padding(horizontal = 12.dp).width(1.dp).height(16.dp).background(White.copy(alpha = 0.25f)))
+            }
             Text(date, color = Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.width(10.dp))
             Text(time, color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
@@ -590,10 +612,15 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
         Text("Einstellungen", color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(18.dp))
         Section("Hintergrund")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             WALLPAPERS.forEachIndexed { i, res ->
                 WallThumb(res, WALL_NAMES[i], i == wallpaper, if (i == 0) Modifier.focusRequester(first) else Modifier) { activity.setWallpaper(i) }
             }
+        }
+        Spacer(Modifier.height(8.dp))
+        val rot = activity.wallRotate.value
+        ActionRow("Automatisch wechseln", if (rot == 0) "Aus" else if (rot >= 60) "jede Stunde" else "alle $rot min") {
+            activity.setWallRotate(ROTATE_STEPS[(ROTATE_STEPS.indexOf(rot).coerceAtLeast(0) + 1) % ROTATE_STEPS.size])
         }
         Spacer(Modifier.height(18.dp))
         Section("Apps auf dem Startbildschirm")
@@ -621,6 +648,7 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
         if (menuKey != 0 && !learning && activity.serviceActive) ActionRow("Hauptmenü-Taste ausschalten", null) { activity.disableMenuKey() }
         Spacer(Modifier.height(18.dp))
         Section("System")
+        ToggleRow("Temperatur Aachen", activity.weather.value, { activity.setWeather(!activity.weather.value) }, null)
         ToggleRow("Eingänge (HDMI) anzeigen", showInputs, { activity.setShowInputs(!showInputs) }, null)
         ActionRow("Fire TV Einstellungen", null) { activity.openFireSettings() }
         ActionRow("Amazon-Startseite öffnen", null) { activity.openAmazonHome() }

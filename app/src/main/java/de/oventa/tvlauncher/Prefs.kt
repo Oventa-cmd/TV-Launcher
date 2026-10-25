@@ -14,6 +14,15 @@ class Prefs(context: Context) {
         get() = sp.getInt("wallpaper", 0)
         set(v) { sp.edit().putInt("wallpaper", v).apply() }
 
+    /** Hintergrund automatisch wechseln, alle n Minuten (0 = aus). */
+    var wallRotate: Int
+        get() = sp.getInt("wallRotate", 15)
+        set(v) { sp.edit().putInt("wallRotate", v).apply() }
+
+    var weather: Boolean
+        get() = sp.getBoolean("weather", true)
+        set(v) { sp.edit().putBoolean("weather", v).apply() }
+
     var showInputs: Boolean
         get() = sp.getBoolean("showInputs", true)
         set(v) { sp.edit().putBoolean("showInputs", v).apply() }
