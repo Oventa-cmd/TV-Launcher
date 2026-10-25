@@ -34,6 +34,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("animations", true)
         set(v) { sp.edit().putBoolean("animations", v).apply() }
 
+    /** Taste, die das Hauptmenue oeffnet (0 = aus). Standard: Guide. */
+    var menuKey: Int
+        get() = sp.getInt("menuKey", android.view.KeyEvent.KEYCODE_GUIDE)
+        set(v) { sp.edit().putInt("menuKey", v).apply() }
+
     /** Bis zu diesem Zeitpunkt leitet der Home-Dienst nicht um (um die Amazon-Startseite bewusst zu öffnen). */
     var bypassUntil: Long
         get() = sp.getLong("bypassUntil", 0L)

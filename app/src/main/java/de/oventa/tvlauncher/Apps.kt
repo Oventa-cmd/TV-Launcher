@@ -77,11 +77,19 @@ object Apps {
         return try {
             tim.tvInputList
                 .filter { it.isPassthroughInput && it.type != TvInputInfo.TYPE_TUNER }
+                // HDMI 1 links ... HDMI 4 rechts; Nummer aus dem Standardnamen ("HDMI 2"), sonst aus der ID
+                .sortedWith(compareBy({ it.type != TvInputInfo.TYPE_HDMI }, { portNumber(context, it) }, { it.id }))
                 .map { info ->
                     val custom = info.loadCustomLabel(context)?.toString()
                     TvInput(info.id, if (!custom.isNullOrBlank()) custom else info.loadLabel(context).toString())
                 }
         } catch (e: Exception) { emptyList() }
+    }
+
+    private fun portNumber(context: Context, info: TvInputInfo): Int {
+        val digits = Regex("(\\d+)")
+        val fromLabel = try { digits.findAll(info.loadLabel(context).toString()).lastOrNull()?.value?.toIntOrNull() } catch (_: Exception) { null }
+        return fromLabel ?: digits.findAll(info.id).lastOrNull()?.value?.toIntOrNull() ?: Int.MAX_VALUE
     }
 
     fun openInput(context: Context, inputId: String): Boolean {

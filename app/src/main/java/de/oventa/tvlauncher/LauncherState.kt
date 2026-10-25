@@ -18,14 +18,28 @@ object LauncherMemory {
     @Volatile var lastNavKey: Long = 0L
     /** Zeitpunkt der letzten Intro-Animation; Overlay und Activity spielen sie nur einmal. */
     @Volatile private var introAt: Long = 0L
+    /** Anlern-Modus fuer die Hauptmenue-Taste (vom Dienst ausgewertet). */
+    val learningKey = androidx.compose.runtime.mutableStateOf(false)
+    /** Aktuell belegte Hauptmenue-Taste (Keycode, 0 = aus). */
+    val menuKey = androidx.compose.runtime.mutableStateOf(android.view.KeyEvent.KEYCODE_GUIDE)
 
-    fun introRecent() = android.os.SystemClock.uptimeMillis() - introAt < 4000
+    fun keyName(code: Int): String = when (code) {
+        0 -> "aus"
+        android.view.KeyEvent.KEYCODE_GUIDE -> "Guide"
+        else -> android.view.KeyEvent.keyCodeToString(code).removePrefix("KEYCODE_")
+            .lowercase().split('_').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
+    }
+
+    /** Waehrend das Uebergangs-Overlay sichtbar ist, spielt nur dieses die Intro. */
+    @Volatile var overlayVisible = false
+
+    fun introRecent() = overlayVisible || android.os.SystemClock.uptimeMillis() - introAt < 1500
 
     fun introRemaining(durationMs: Int): Long =
         (durationMs - (android.os.SystemClock.uptimeMillis() - introAt)).coerceAtLeast(0L)
 
-    fun claimIntro(): Boolean {
-        if (introRecent()) return false
+    fun claimIntro(force: Boolean = false): Boolean {
+        if (!force && introRecent()) return false
         introAt = android.os.SystemClock.uptimeMillis()
         return true
     }
@@ -50,7 +64,11 @@ class LauncherState(
     val animations = mutableStateOf(prefs.animations)
     val tick = mutableStateOf(0)
 
-    init { Sounds.enabled = prefs.sounds }
+    init { Sounds.enabled = prefs.sounds; LauncherMemory.menuKey.value = prefs.menuKey }
+
+    fun startLearningKey() { LauncherMemory.learningKey.value = true }
+    fun disableMenuKey() { prefs.menuKey = 0; LauncherMemory.menuKey.value = 0; LauncherMemory.learningKey.value = false }
+    val serviceActive: Boolean get() = HomeRedirectService.instance != null
 
     fun refreshPrefs() {
         visible.value = prefs.visible

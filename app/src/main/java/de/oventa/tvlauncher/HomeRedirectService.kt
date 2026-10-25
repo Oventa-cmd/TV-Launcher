@@ -6,6 +6,7 @@ import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import androidx.compose.ui.platform.ComposeView
@@ -43,6 +44,7 @@ class HomeRedirectService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         Sounds.init(this)
+        LauncherMemory.menuKey.value = Prefs(this).menuKey
         state = LauncherState(this) { /* App gestartet: Overlay bleibt, bis sie im Vordergrund ist */ }
         state.reload()
         startLogWatcher()
@@ -51,8 +53,8 @@ class HomeRedirectService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
+        if (pkg != "com.android.systemui") foreground = pkg
         if (pkg == packageName) return
-        foreground = pkg
         if (pkg != AMAZON_LAUNCHER) {
             // Eine andere App ist vorne (z. B. aus dem Overlay gestartet): Overlay weg
             if (pkg != "com.android.systemui") hideOverlay()
@@ -60,6 +62,36 @@ class HomeRedirectService : AccessibilityService() {
         }
         if (System.currentTimeMillis() < Prefs(this).bypassUntil) return
         onHome()
+    }
+
+    /**
+     * Hauptmenue-Taste (Standard: Guide). Alle anderen Tasten werden sofort unveraendert
+     * durchgereicht. Im Anlern-Modus wird die naechste Taste gespeichert.
+     */
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        val code = event.keyCode
+        if (LauncherMemory.learningKey.value) {
+            if (code == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_UP) handler.post { LauncherMemory.learningKey.value = false }
+                return true
+            }
+            if (code in NAV_CODES) return false
+            if (event.action == KeyEvent.ACTION_UP) {
+                Prefs(this).menuKey = code
+                handler.post {
+                    LauncherMemory.menuKey.value = code
+                    LauncherMemory.learningKey.value = false
+                    Sounds.select()
+                }
+            }
+            return true
+        }
+        val menu = LauncherMemory.menuKey.value
+        if (menu == 0 || code != menu) return false
+        if (event.action == KeyEvent.ACTION_UP) handler.post {
+            if (foreground == packageName) start(force = true) else { Prefs(this).bypassUntil = 0L; onHome() }
+        }
+        return true
     }
 
     private fun onHome() {
@@ -83,7 +115,7 @@ class HomeRedirectService : AccessibilityService() {
             val v = ComposeView(this).apply {
                 setViewTreeLifecycleOwner(owner)
                 setViewTreeSavedStateRegistryOwner(owner)
-                setContent { LauncherScreen(state) }
+                setContent { LauncherScreen(state, isOverlay = true) }
             }
             val lp = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -93,8 +125,10 @@ class HomeRedirectService : AccessibilityService() {
                 PixelFormat.OPAQUE
             )
             try {
+                LauncherMemory.overlayVisible = false
                 state.refreshPrefs()
                 wm.addView(v, lp)
+                LauncherMemory.overlayVisible = true
                 overlay = v
                 owner.resume()
             } catch (_: Exception) { }
@@ -105,6 +139,7 @@ class HomeRedirectService : AccessibilityService() {
         handler.post {
             val v = overlay ?: return@post
             overlay = null
+            LauncherMemory.overlayVisible = false
             try { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v) } catch (_: Exception) { }
         }
     }
@@ -161,6 +196,10 @@ class HomeRedirectService : AccessibilityService() {
 
     companion object {
         const val AMAZON_LAUNCHER = "com.amazon.tv.launcher"
+        private val NAV_CODES = setOf(
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_HOME
+        )
         @Volatile var instance: HomeRedirectService? = null
     }
 }

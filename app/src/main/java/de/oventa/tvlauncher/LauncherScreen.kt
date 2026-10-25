@@ -1,18 +1,20 @@
 package de.oventa.tvlauncher
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -25,9 +27,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,15 +39,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,18 +57,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -76,14 +81,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.Text
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import android.os.SystemClock
-import java.util.Calendar
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -92,17 +97,41 @@ val WALL_NAMES = listOf("Dunkel", "Graphit", "Nachtblau")
 
 private val White = Color.White
 private val Muted = Color.White.copy(alpha = 0.66f)
-private val Glass = Color.White.copy(alpha = 0.10f)
 private val Smooth = spring<Float>(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)
 private val Accent = Color(0xFF9CC8FF)
-private const val INTRO_MS = 1300
+private const val INTRO_MS = 1700
 
-/** Teilfortschritt [0..1] eines Abschnitts der Intro-Animation, mit weicher Kurve. */
-private fun seg(p: Float, start: Float, len: Float): Float =
-    FastOutSlowInEasing.transform(((p - start) / len).coerceIn(0f, 1f))
+/** Weiches Ueberschwingen ("fliegt rein und federt nach"). */
+private val BackOut = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
+
+/** Intro unabhaengig von der System-Animationsgeschwindigkeit (per ADB auf 0.5 gesetzt). */
+private object FullSpeed : MotionDurationScale { override val scaleFactor = 1f }
+
+private val NAV_KEYS = setOf(Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight)
+
+/** Teilfortschritt [0..1] eines Abschnitts der Intro-Animation. */
+private fun raw(p: Float, start: Float, len: Float) = ((p - start) / len).coerceIn(0f, 1f)
+private fun seg(p: Float, start: Float, len: Float) = FastOutSlowInEasing.transform(raw(p, start, len))
+
+/** Glasoptik ohne Weichzeichner (Fire OS 7 kann keinen Hintergrund-Blur): Verlauf + Lichtkante. */
+private fun Modifier.glass(shape: Shape, focused: Boolean = false, strength: Float = 1f): Modifier = this
+    .background(
+        Brush.verticalGradient(
+            listOf(
+                White.copy(alpha = (if (focused) 0.30f else 0.15f) * strength),
+                White.copy(alpha = (if (focused) 0.16f else 0.05f) * strength)
+            )
+        ),
+        shape
+    )
+    .border(
+        1.dp,
+        Brush.verticalGradient(listOf(White.copy(alpha = if (focused) 0.65f else 0.38f), White.copy(alpha = 0.06f))),
+        shape
+    )
 
 @Composable
-fun LauncherScreen(state: LauncherState) {
+fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
     val apps = state.apps.value
     val visible = state.visible.value
     val showInputs = state.showInputs.value
@@ -113,9 +142,9 @@ fun LauncherScreen(state: LauncherState) {
     val greetingOn = state.greeting.value
     val userName = state.userName.value
     val scope = rememberCoroutineScope()
-    // Intro: Begruessung und Kacheln bauen sich gestaffelt auf. Overlay und Activity teilen sich
-    // eine Intro pro Home-Druck, damit beim Wechsel nichts doppelt abgespielt wird.
-    val intro = remember { Animatable(if (anims && !LauncherMemory.introRecent()) 0f else 1f) }
+    // Intro bei jedem Aufruf des Startbildschirms. Overlay und Activity teilen sich eine Intro
+    // pro Aufruf, damit beim Wechsel zwischen beiden nichts doppelt abgespielt wird.
+    val intro = remember { Animatable(if (anims && (isOverlay || !LauncherMemory.introRecent())) 0f else 1f) }
     val introP: () -> Float = { intro.value }
     var settingsOpen by remember { mutableStateOf(false) }
     var focusedLabel by remember { mutableStateOf(LauncherMemory.focusedLabel) }
@@ -137,15 +166,19 @@ fun LauncherScreen(state: LauncherState) {
     }
 
     LaunchedEffect(resumeTick) {
-        if (anims && LauncherMemory.claimIntro()) {
+        if (anims && LauncherMemory.claimIntro(force = isOverlay)) {
+            settingsOpen = false
             // Eigener Scope: ein zweiter Resume-Tick bricht die laufende Intro nicht ab
-            scope.launch { intro.snapTo(0f); intro.animateTo(1f, tween(INTRO_MS, easing = LinearEasing)) }
+            scope.launch {
+                intro.snapTo(0f)
+                withContext(FullSpeed) { intro.animateTo(1f, tween(INTRO_MS, easing = LinearEasing)) }
+            }
         } else if (!intro.isRunning && intro.value < 1f) {
             intro.snapTo(1f)
         }
     }
 
-    // Erst wenn alles steht und die Animationen durch sind, darf das Overlay verschwinden
+    // Erst wenn alles steht und die Intro durch ist, darf das Overlay verschwinden
     LaunchedEffect(shown.isNotEmpty(), resumeTick) {
         if (shown.isNotEmpty()) {
             delay(maxOf(700L, LauncherMemory.introRemaining(INTRO_MS) + 100L))
@@ -175,71 +208,75 @@ fun LauncherScreen(state: LauncherState) {
             }
     ) {
         Wallpaper(wallpaper, anims)
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f)))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.10f), Color.Black.copy(alpha = 0.40f)))))
 
-        Column(Modifier.fillMaxSize().padding(start = 75.dp, end = 75.dp, top = 34.dp, bottom = 44.dp)) {
+        Column(Modifier.fillMaxSize().padding(start = 60.dp, end = 60.dp, top = 30.dp, bottom = 30.dp)) {
             TopBar(onSettings = { settingsOpen = true; Sounds.open() }, gear = gear, firstTileRef = if (shown.isNotEmpty()) firstTile else null)
 
             if (greetingOn) {
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(22.dp))
                 Greeting(userName, introP)
             }
 
             Spacer(Modifier.weight(1f))
 
-            Column(Modifier.graphicsLayer { alpha = seg(introP(), 0.22f, 0.35f) }) {
-            Text("AUSGEWÄHLT", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.5.sp)
-            AnimatedContent(
-                targetState = focusedLabel,
-                transitionSpec = {
-                    (fadeIn(tween(260)) + slideInVertically(tween(320)) { it / 5 }) togetherWith fadeOut(tween(140))
-                },
-                label = "title"
-            ) { t ->
-                Text(
-                    t.ifEmpty { " " },
-                    color = White, fontSize = if (greetingOn) 44.sp else 52.sp, fontWeight = FontWeight.Bold,
-                    letterSpacing = (-1.5).sp, maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-            }
-            Text("OK zum Öffnen · Menü-Taste für Einstellungen", color = Muted, fontSize = 14.sp)
-            }
-
-            Spacer(Modifier.height(34.dp))
-
-            if (shown.isEmpty()) {
-                Text("Keine Apps ausgewählt – Menü-Taste drücken.", color = Muted, fontSize = 16.sp)
-            } else {
-                Row(
-                    // Innenabstand im Scrollbereich, damit die vergroesserte Kachel nicht abgeschnitten wird
-                    Modifier.offset(x = (-14).dp).fillMaxWidth().height(112.dp)
-                        .horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    shown.forEachIndexed { idx, app ->
-                        AppTile(
-                            app = app,
-                            appear = { seg(introP(), 0.30f + idx * 0.06f, 0.38f) },
-                            modifier = (if (app.packageName == targetPkg) Modifier.focusRequester(firstTile) else Modifier)
-                                .focusProperties {
-                                    up = gear
-                                    if (showInputs && inputs.isNotEmpty()) down = firstPill
-                                },
-                            onFocus = { focusedLabel = app.label; LauncherMemory.focusedPkg = app.packageName; LauncherMemory.focusedLabel = app.label },
-                            onClick = { state.launch(app.packageName) }
-                        )
-                    }
+            Column(Modifier.padding(start = 6.dp).graphicsLayer { alpha = seg(introP(), 0.30f, 0.30f) }) {
+                AnimatedContent(
+                    targetState = focusedLabel,
+                    transitionSpec = {
+                        (fadeIn(tween(260)) + slideInVertically(tween(320)) { it / 5 }) togetherWith fadeOut(tween(140))
+                    },
+                    label = "title"
+                ) { t ->
+                    Text(
+                        t.ifEmpty { " " },
+                        color = White, fontSize = 38.sp, fontWeight = FontWeight.Bold,
+                        letterSpacing = (-1.2).sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
                 }
+                Text("OK zum Öffnen · Menü-Taste für Einstellungen", color = Muted, fontSize = 13.sp)
             }
 
-            if (showInputs && inputs.isNotEmpty()) {
-                Spacer(Modifier.height(22.dp))
-                // Feste Hoehe: das Wachsen der Eingaenge verschiebt nichts darueber
-                Row(Modifier.height(44.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Eingänge", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(end = 4.dp))
-                    inputs.forEachIndexed { i, inp ->
-                        Pill(inp.label, if (i == 0) Modifier.focusRequester(firstPill).focusProperties { up = firstTile } else Modifier.focusProperties { up = firstTile }) { state.openInput(inp.id) }
+            Spacer(Modifier.height(14.dp))
+
+            // Glas-Dock mit Apps und Eingaengen. Kein clip: vergroesserte Kacheln duerfen ueberstehen.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        val a = seg(introP(), 0.18f, 0.40f)
+                        alpha = a
+                        translationY = (1f - a) * 40.dp.toPx()
+                    }
+                    .glass(RoundedCornerShape(26.dp), strength = 0.9f)
+                    .padding(horizontal = 22.dp, vertical = 14.dp)
+            ) {
+                if (shown.isEmpty()) {
+                    Text("Keine Apps ausgewählt – Menü-Taste drücken.", color = Muted, fontSize = 16.sp, modifier = Modifier.padding(vertical = 24.dp))
+                } else {
+                    TileRow(
+                        shown = shown,
+                        introP = introP,
+                        targetPkg = targetPkg,
+                        firstTile = firstTile,
+                        gear = gear,
+                        downTo = if (inputs.isNotEmpty()) firstPill else null,
+                        onFocus = { app -> focusedLabel = app.label; LauncherMemory.focusedPkg = app.packageName; LauncherMemory.focusedLabel = app.label },
+                        onClick = { app -> state.launch(app.packageName) }
+                    )
+                }
+
+                if (inputs.isNotEmpty()) {
+                    Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(White.copy(alpha = 0.10f)))
+                    // Feste Hoehe: das Wachsen der Eingaenge verschiebt nichts darueber
+                    Row(Modifier.height(40.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("EINGÄNGE", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, modifier = Modifier.padding(end = 6.dp))
+                        inputs.forEachIndexed { i, inp ->
+                            Pill(
+                                inp.label,
+                                (if (i == 0) Modifier.focusRequester(firstPill) else Modifier).focusProperties { up = firstTile }
+                            ) { state.openInput(inp.id) }
+                        }
                     }
                 }
             }
@@ -256,43 +293,51 @@ fun LauncherScreen(state: LauncherState) {
     }
 }
 
+/**
+ * Kacheln passen sich der Breite an, damit alle vollstaendig sichtbar sind.
+ * Erst wenn es zu viele werden, wird gescrollt.
+ */
 @Composable
-private fun TopBar(onSettings: () -> Unit, gear: FocusRequester, firstTileRef: FocusRequester?) {
-    val now by produceState(initialValue = Date()) {
-        while (true) { value = Date(); delay(5_000) }
-    }
-    val time = remember(now) { SimpleDateFormat("HH:mm", Locale.GERMANY).format(now) }
-    val date = remember(now) { SimpleDateFormat("EE d. MMM", Locale.GERMANY).format(now) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        var f by remember { mutableStateOf(false) }
-        val s by animateFloatAsState(if (f) 1.12f else 1f, Smooth, label = "gear")
-        Box(
-            Modifier
-                .size(32.dp)
-                .focusRequester(gear)
-                .focusProperties { down = firstTileRef ?: FocusRequester.Default }
-                .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
-                .clickable(remember { MutableInteractionSource() }, null) { onSettings() }
+private fun TileRow(
+    shown: List<TvApp>,
+    introP: () -> Float,
+    targetPkg: String?,
+    firstTile: FocusRequester,
+    gear: FocusRequester,
+    downTo: FocusRequester?,
+    onFocus: (TvApp) -> Unit,
+    onClick: (TvApp) -> Unit
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val gap = 18.dp
+        val n = shown.size
+        val fit = (maxWidth - gap * (n - 1)) / n
+        val tileW: Dp = fit.coerceIn(84.dp, 150.dp)
+        val scrolls = fit < 84.dp
+        val tileH = tileW * 9f / 16f
+        val rowMod = Modifier.fillMaxWidth().height(tileH + 44.dp)
+        Row(
+            if (scrolls) rowMod.horizontalScroll(rememberScrollState()) else rowMod,
+            horizontalArrangement = if (scrolls) Arrangement.spacedBy(gap) else Arrangement.spacedBy(gap, Alignment.Start),
+            verticalAlignment = Alignment.Bottom
         ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { scaleX = s; scaleY = s }
-                    .clip(CircleShape)
-                    .background(if (f) White else Glass),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("⚙", color = if (f) Color.Black else White, fontSize = 16.sp)
+            shown.forEachIndexed { idx, app ->
+                AppTile(
+                    app = app,
+                    width = tileW,
+                    appear = { seg(introP(), 0.30f + idx * 0.06f, 0.36f) },
+                    modifier = (if (app.packageName == targetPkg) Modifier.focusRequester(firstTile) else Modifier)
+                        .focusProperties {
+                            up = gear
+                            if (downTo != null) down = downTo
+                        },
+                    onFocus = { onFocus(app) },
+                    onClick = { onClick(app) }
+                )
             }
         }
-        Spacer(Modifier.weight(1f))
-        Text(date, color = Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.width(10.dp))
-        Text(time, color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
     }
 }
-
-private val NAV_KEYS = setOf(Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight)
 
 /** Hintergrund mit langsamer "Ken Burns"-Bewegung (abschaltbar). */
 @Composable
@@ -325,7 +370,10 @@ private fun Wallpaper(wallpaper: Int, anims: Boolean) {
     }
 }
 
-/** "Guten Abend, Arne" + "Was möchtest du schauen?" mit Einblenden und einem Lichtschimmer. */
+/**
+ * "Guten Abend, Arne" fliegt Buchstabe fuer Buchstabe von unten herein und federt nach,
+ * danach laeuft ein Lichtschimmer darueber. "Was möchtest du schauen?" gleitet von links nach.
+ */
 @Composable
 private fun Greeting(name: String, p: () -> Float) {
     val hour by produceState(initialValue = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
@@ -337,24 +385,17 @@ private fun Greeting(name: String, p: () -> Float) {
         in 17..21 -> "Guten Abend, $name"
         else -> "Noch wach, $name?"
     }
+    val step = (0.32f / title.length.coerceAtLeast(1)).coerceAtMost(0.03f)
     Column {
-        Text(
-            title,
-            color = White, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.8).sp,
-            maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .graphicsLayer {
-                    val a = seg(p(), 0f, 0.38f)
-                    alpha = a
-                    translationY = (1f - a) * 18.dp.toPx()
-                    compositingStrategy = CompositingStrategy.Offscreen
-                }
+        Row(
+            Modifier
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                     drawContent()
-                    // Ein heller Schimmer laeuft einmal ueber den Text
-                    val s = seg(p(), 0.25f, 0.6f)
+                    // Lichtschimmer nach dem Hereinfliegen
+                    val s = seg(p(), 0.50f, 0.42f)
                     if (s in 0.001f..0.999f) {
-                        val band = size.width * 0.35f
+                        val band = size.width * 0.30f
                         val x = -band + (size.width + 2 * band) * s
                         drawRect(
                             Brush.linearGradient(
@@ -365,23 +406,79 @@ private fun Greeting(name: String, p: () -> Float) {
                         )
                     }
                 }
-        )
+        ) {
+            title.forEachIndexed { i, ch ->
+                Text(
+                    ch.toString(),
+                    color = White, fontSize = 36.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.graphicsLayer {
+                        val r = raw(p(), i * step, 0.30f)
+                        val c = BackOut.transform(r)
+                        alpha = (r * 2.2f).coerceAtMost(1f)
+                        translationY = (1f - c) * 46.dp.toPx()
+                        val s = 0.6f + 0.4f * c
+                        scaleX = s; scaleY = s
+                        rotationZ = (1f - c) * -10f
+                    }
+                )
+            }
+        }
         Text(
             "Was möchtest du schauen?",
             color = Muted, fontSize = 18.sp, fontWeight = FontWeight.Medium,
             modifier = Modifier
                 .padding(top = 2.dp)
                 .graphicsLayer {
-                    val a = seg(p(), 0.12f, 0.38f)
+                    val a = seg(p(), 0.30f, 0.36f)
                     alpha = a
-                    translationY = (1f - a) * 12.dp.toPx()
+                    translationX = (1f - a) * -60.dp.toPx()
                 }
         )
     }
 }
 
 @Composable
-private fun AppTile(app: TvApp, appear: () -> Float, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
+private fun TopBar(onSettings: () -> Unit, gear: FocusRequester, firstTileRef: FocusRequester?) {
+    val now by produceState(initialValue = Date()) {
+        while (true) { value = Date(); delay(5_000) }
+    }
+    val time = remember(now) { SimpleDateFormat("HH:mm", Locale.GERMANY).format(now) }
+    val date = remember(now) { SimpleDateFormat("EE d. MMM", Locale.GERMANY).format(now) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        var f by remember { mutableStateOf(false) }
+        val s by animateFloatAsState(if (f) 1.12f else 1f, Smooth, label = "gear")
+        Box(
+            Modifier
+                .size(36.dp)
+                .focusRequester(gear)
+                .focusProperties { down = firstTileRef ?: FocusRequester.Default }
+                .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
+                .clickable(remember { MutableInteractionSource() }, null) { onSettings() }
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { scaleX = s; scaleY = s }
+                    .then(if (f) Modifier.background(White, CircleShape) else Modifier.glass(CircleShape)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("⚙", color = if (f) Color.Black else White, fontSize = 17.sp)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Row(
+            Modifier.glass(RoundedCornerShape(18.dp)).padding(horizontal = 16.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(date, color = Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.width(10.dp))
+            Text(time, color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun AppTile(app: TvApp, width: Dp, appear: () -> Float, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -390,13 +487,14 @@ private fun AppTile(app: TvApp, appear: () -> Float, modifier: Modifier, onFocus
         if (pressed) tween(90) else Smooth, label = "scale"
     )
     val lift by animateDpAsState(if (focused) (-6).dp else 0.dp, spring(0.72f, Spring.StiffnessMediumLow), label = "lift")
-    val elev by animateDpAsState(if (focused) 22.dp else 6.dp, tween(260), label = "elev")
+    val elev by animateDpAsState(if (focused) 22.dp else 4.dp, tween(260), label = "elev")
     val sheen by animateFloatAsState(if (focused) 1f else 0f, tween(260), label = "sheen")
-    val shape = RoundedCornerShape(11.dp)
+    val shape = RoundedCornerShape(12.dp)
+    val height = width * 9f / 16f
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(120.dp).graphicsLayer {
+        modifier = Modifier.width(width).graphicsLayer {
             // Gestaffeltes Hereinfahren beim Intro
             val a = appear()
             alpha = a
@@ -408,7 +506,7 @@ private fun AppTile(app: TvApp, appear: () -> Float, modifier: Modifier, onFocus
         // Fokus-Ziel ohne Transformation, damit die Pfeiltasten-Navigation die echte Position nutzt
         Box(
             modifier
-                .size(120.dp, 68.dp)
+                .size(width, height)
                 .onFocusChanged { focused = it.isFocused; if (it.isFocused) { onFocus(); Sounds.nav() } }
                 .clickable(remember { MutableInteractionSource() }, null) {
                     if (pressed) return@clickable
@@ -418,34 +516,35 @@ private fun AppTile(app: TvApp, appear: () -> Float, modifier: Modifier, onFocus
                     scope.launch { delay(130); onClick(); delay(400); pressed = false }
                 }
         ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift.toPx() }
-                .shadow(elev, shape, clip = false)
-                .clip(shape)
-                .background(Color(0xFF1C1C22)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (app.banner != null) {
-                Image(app.banner, contentDescription = app.label, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
-                    if (app.icon != null) Image(app.icon, contentDescription = null, modifier = Modifier.size(30.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(app.label, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                }
-            }
             Box(
-                Modifier.fillMaxSize().graphicsLayer { alpha = sheen }
-                    .background(Brush.linearGradient(listOf(Color.White.copy(alpha = 0.26f), Color.Transparent), end = androidx.compose.ui.geometry.Offset(160f, 140f)))
-                    .border(1.dp, Color.White.copy(alpha = 0.22f), shape)
-            )
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift.toPx() }
+                    .shadow(elev, shape, clip = false)
+                    .clip(shape)
+                    .background(Color(0xFF1C1C22)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (app.banner != null) {
+                    Image(app.banner, contentDescription = app.label, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
+                        if (app.icon != null) Image(app.icon, contentDescription = null, modifier = Modifier.size(28.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(app.label, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                    }
+                }
+                // Glas-Glanz: immer eine feine Lichtkante, bei Fokus ein heller Reflex
+                Box(
+                    Modifier.fillMaxSize()
+                        .background(Brush.verticalGradient(listOf(White.copy(alpha = 0.10f + 0.16f * sheen), Color.Transparent, Color.Transparent)))
+                        .border(1.dp, Brush.verticalGradient(listOf(White.copy(alpha = 0.30f + 0.45f * sheen), White.copy(alpha = 0.05f))), shape)
+                )
+            }
         }
-        }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         Text(
-            app.label, color = White.copy(alpha = sheen), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+            app.label, color = White.copy(alpha = 0.55f + 0.45f * sheen), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
             maxLines = 1, overflow = TextOverflow.Ellipsis
         )
     }
@@ -455,15 +554,15 @@ private fun AppTile(app: TvApp, appear: () -> Float, modifier: Modifier, onFocus
 private fun Pill(label: String, modifier: Modifier, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     // Waechst nach rechts: echte Groessenaenderung, die folgenden Eingaenge ruecken weich nach
-    val padH by animateDpAsState(if (f) 20.dp else 13.dp, spring(0.75f, Spring.StiffnessMediumLow), label = "padH")
-    val padV by animateDpAsState(if (f) 9.dp else 6.dp, spring(0.75f, Spring.StiffnessMediumLow), label = "padV")
-    val fs by animateFloatAsState(if (f) 13f else 11f, Smooth, label = "fs")
+    val padH by animateDpAsState(if (f) 20.dp else 14.dp, spring(0.75f, Spring.StiffnessMediumLow), label = "padH")
+    val padV by animateDpAsState(if (f) 8.dp else 6.dp, spring(0.75f, Spring.StiffnessMediumLow), label = "padV")
+    val fs by animateFloatAsState(if (f) 13f else 12f, Smooth, label = "fs")
+    val shape = RoundedCornerShape(16.dp)
     Box(
         modifier
             .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
             .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (f) White else Glass)
+            .then(if (f) Modifier.background(White, shape) else Modifier.glass(shape))
             .padding(horizontal = padH, vertical = padV)
     ) {
         Text(label, color = if (f) Color.Black else White, fontSize = fs.sp, fontWeight = FontWeight.Medium)
@@ -475,15 +574,19 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { delay(80); try { first.requestFocus() } catch (_: Exception) { } }
     val ordered = visible.mapNotNull { p -> apps.firstOrNull { it.packageName == p } } + apps.filter { it.packageName !in visible }
+    val shape = RoundedCornerShape(24.dp)
+    val learning = LauncherMemory.learningKey.value
+    val menuKey = LauncherMemory.menuKey.value
 
     Column(
         Modifier
-            .padding(20.dp)
-            .width(360.dp)
+            .padding(18.dp)
+            .width(370.dp)
             .fillMaxHeight()
-            .shadow(30.dp, RoundedCornerShape(20.dp))
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xF01C1C22))
+            .shadow(30.dp, shape)
+            .background(Brush.verticalGradient(listOf(Color(0xE6343440), Color(0xEB16161C))), shape)
+            .border(1.dp, Brush.verticalGradient(listOf(White.copy(alpha = 0.40f), White.copy(alpha = 0.06f))), shape)
+            .clip(shape)
             .padding(horizontal = 26.dp, vertical = 26.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -512,10 +615,18 @@ private fun SettingsPanel(activity: LauncherState, apps: List<TvApp>, visible: L
         ToggleRow("Klick-Sounds", activity.sounds.value, { activity.setSounds(!activity.sounds.value) }, null)
         ToggleRow("Animationen", activity.animations.value, { activity.setAnimations(!activity.animations.value) }, null)
         Spacer(Modifier.height(18.dp))
+        Section("Fernbedienung")
+        when {
+            !activity.serviceActive -> Text("Home-Dienst ist nicht aktiv – Tastenbelegung nicht möglich.", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+            learning -> ActionRow("Jetzt gewünschte Taste drücken …", "Zurück = Abbrechen") { }
+            else -> ActionRow("Hauptmenü-Taste", LauncherMemory.keyName(menuKey)) { activity.startLearningKey() }
+        }
+        if (menuKey != 0 && !learning && activity.serviceActive) ActionRow("Hauptmenü-Taste ausschalten", null) { activity.disableMenuKey() }
+        Spacer(Modifier.height(18.dp))
         Section("System")
         ToggleRow("Eingänge (HDMI) anzeigen", showInputs, { activity.setShowInputs(!showInputs) }, null)
-        ActionRow("Fire TV Einstellungen") { activity.openFireSettings() }
-        ActionRow("Amazon-Startseite öffnen") { activity.openAmazonHome() }
+        ActionRow("Fire TV Einstellungen", null) { activity.openFireSettings() }
+        ActionRow("Amazon-Startseite öffnen", null) { activity.openAmazonHome() }
     }
 }
 
@@ -553,12 +664,12 @@ private fun WallThumb(res: Int, name: String, selected: Boolean, modifier: Modif
 private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: ((Int) -> Unit)?) {
     var f by remember { mutableStateOf(false) }
     val knob by animateDpAsState(if (on) 15.dp else 0.dp, spring(0.7f, Spring.StiffnessMedium), label = "knob")
+    val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (f) White.copy(alpha = 0.16f) else Color.Transparent)
+            .then(if (f) Modifier.glass(shape, focused = true) else Modifier)
             .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
             .onPreviewKeyEvent { e ->
                 if (onMove != null && on && e.type == KeyEventType.KeyDown && (e.key == Key.DirectionLeft || e.key == Key.DirectionRight)) {
@@ -583,20 +694,21 @@ private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: 
 }
 
 @Composable
-private fun ActionRow(label: String, onClick: () -> Unit) {
+private fun ActionRow(label: String, value: String?, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (f) White.copy(alpha = 0.16f) else Color.Transparent)
+            .then(if (f) Modifier.glass(shape, focused = true) else Modifier)
             .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
             .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-        Text("›", color = Muted, fontSize = 16.sp)
+        Text(label, color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (value != null) Text(value, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+        Text("›", color = Muted, fontSize = 16.sp, modifier = Modifier.padding(start = 6.dp))
     }
 }

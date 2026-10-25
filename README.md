@@ -7,6 +7,9 @@ Schlichter Startbildschirm für Fire TV / Android TV (Kotlin, Jetpack Compose).
 - Intro-Animation (Kacheln fahren gestaffelt herein), langsam bewegter Hintergrund, Druck-Effekt beim Öffnen
 - Dezente Klick-Sounds (in der App erzeugt, keine fremden Audiodateien)
 - Alles einzeln abschaltbar unter Einstellungen → „Begrüßung & Effekte“
+- Glasoptik (Dock, Uhr, Eingänge, Einstellungen); Kacheln passen sich der Breite an, nichts wird abgeschnitten
+- Eingänge sortiert: HDMI 1 links … HDMI 4 rechts
+- Hauptmenü-Taste: Guide öffnet den Startbildschirm; andere Taste unter Einstellungen → Fernbedienung anlernbar (braucht den Home-Dienst)
 - Einstellungen über die **Menü-Taste** (≡) oder das Zahnrad: Hintergrund, Apps ein/aus, Reihenfolge (◀ ▶), Eingänge
 - Standard-Apps: SmartTube, Netflix, Twitch, Jellyfin, ProtonVPN, Kodi (YouTube versteckt, nicht gelöscht)
 - Home-Taste: optionaler Bedienungshilfe-Dienst `HomeRedirectService` öffnet diesen Launcher, sobald die Amazon-Startseite erscheint. Er liest keine Bildschirminhalte.
