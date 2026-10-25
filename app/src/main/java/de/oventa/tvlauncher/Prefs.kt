@@ -43,10 +43,23 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("animations", true)
         set(v) { sp.edit().putBoolean("animations", v).apply() }
 
-    /** Taste, die das Hauptmenue oeffnet (0 = aus). Standard: Guide. */
+    /** Zusaetzliche, angelernte Taste fuer den Startbildschirm (0 = aus). Guide ist auf Fire-TVs vom System belegt. */
     var menuKey: Int
-        get() = sp.getInt("menuKey", android.view.KeyEvent.KEYCODE_GUIDE)
+        get() {
+            // Einmalige Umstellung: Guide war frueher Standard, wird aber von Fire OS abgefangen
+            if (!sp.getBoolean("guideMigrated", false)) {
+                sp.edit().putBoolean("guideMigrated", true).apply()
+                if (sp.getInt("menuKey", android.view.KeyEvent.KEYCODE_GUIDE) == android.view.KeyEvent.KEYCODE_GUIDE)
+                    sp.edit().putInt("menuKey", 0).apply()
+            }
+            return sp.getInt("menuKey", 0)
+        }
         set(v) { sp.edit().putInt("menuKey", v).apply() }
+
+    /** Zurueck-Taste lang druecken = Startbildschirm. */
+    var longBackHome: Boolean
+        get() = sp.getBoolean("longBackHome", true)
+        set(v) { sp.edit().putBoolean("longBackHome", v).apply() }
 
     /** Bis zu diesem Zeitpunkt leitet der Home-Dienst nicht um (um die Amazon-Startseite bewusst zu öffnen). */
     var bypassUntil: Long

@@ -666,15 +666,24 @@ private fun SettingsPanel(
         ToggleRow("Animationen", activity.animations.value, { activity.setAnimations(!activity.animations.value) }, null)
         Spacer(Modifier.height(18.dp))
         Section("Fernbedienung")
+        ToggleRow("Zurück lang drücken = Startbildschirm", activity.longBackHome.value, { activity.setLongBackHome(!activity.longBackHome.value) }, null)
         when {
             !activity.serviceActive -> Text("Home-Dienst ist nicht aktiv – Tastenbelegung nicht möglich.", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
             learning -> ActionRow("Jetzt gewünschte Taste drücken …", "Zurück = Abbrechen") { }
-            else -> ActionRow("Hauptmenü-Taste", LauncherMemory.keyName(menuKey)) { activity.startLearningKey() }
+            else -> ActionRow("Zusätzliche Taste anlernen", LauncherMemory.keyName(menuKey)) { activity.startLearningKey() }
         }
-        if (menuKey != 0 && !learning && activity.serviceActive) ActionRow("Hauptmenü-Taste ausschalten", null) { activity.disableMenuKey() }
+        if (menuKey != 0 && !learning && activity.serviceActive) ActionRow("Zusätzliche Taste ausschalten", null) { activity.disableMenuKey() }
+        Spacer(Modifier.height(18.dp))
+        Section("Bildschirmschoner & Ausschalten")
+        if (activity.canWritePower) {
+            ActionRow("Bildschirmschoner startet nach", Power.label(activity.screensaverMin.value)) { activity.cycleScreensaver() }
+            ActionRow("TV ausschalten nach", Power.label(activity.sleepMin.value)) { activity.cycleSleep() }
+        } else {
+            Text("Zum Einstellen einmalig per adb freischalten (siehe Anleitung).", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+        }
+        ActionRow("Bildschirmschoner jetzt starten", null) { activity.startScreensaver() }
         Spacer(Modifier.height(18.dp))
         Section("System")
-        ActionRow("Bildschirmschoner jetzt starten", null) { activity.startScreensaver() }
         ToggleRow("Temperatur Aachen", activity.weather.value, { activity.setWeather(!activity.weather.value) }, null)
         ToggleRow("Eingänge (HDMI) anzeigen", showInputs, { activity.setShowInputs(!showInputs) }, null)
         ActionRow("Fire TV Einstellungen", null) { activity.openFireSettings() }

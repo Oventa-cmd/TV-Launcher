@@ -5,6 +5,10 @@
     <!-- Optional, per adb gewaehrt: Home-Druck im Systemlog frueh erkennen -->
     <uses-permission android:name="android.permission.READ_LOGS" tools:ignore="ProtectedPermissions" />
 
+    <!-- Bildschirmschoner-/Ausschaltzeit (einmalig per adb freigeschaltet) -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
+
     <!-- Wetter (Open-Meteo) -->
     <uses-permission android:name="android.permission.INTERNET" />
 

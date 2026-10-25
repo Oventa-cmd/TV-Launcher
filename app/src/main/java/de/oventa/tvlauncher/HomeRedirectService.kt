@@ -86,12 +86,54 @@ class HomeRedirectService : AccessibilityService() {
             }
             return true
         }
+        if (code == KeyEvent.KEYCODE_BACK && handleBack(event)) return true
         val menu = LauncherMemory.menuKey.value
         if (menu == 0 || code != menu) return false
         if (event.action == KeyEvent.ACTION_UP) handler.post {
             if (foreground == packageName) start(force = true) else { Prefs(this).bypassUntil = 0L; onHome() }
         }
         return true
+    }
+
+    // --- Zurueck lang druecken = Startbildschirm ---
+    private var backDownAt = 0L
+    private var backLongFired = false
+    private var passBack = 0
+
+    /**
+     * Kurzer Druck: wird unveraendert als normales "Zurueck" weitergegeben.
+     * Langer Druck (ab 0,6 s): Startbildschirm. Die Tastenwiederholung beim Halten wird verschluckt.
+     */
+    private fun handleBack(e: KeyEvent): Boolean {
+        if (passBack > 0) { if (e.action == KeyEvent.ACTION_UP) passBack--; return false }
+        if (!Prefs(this).longBackHome || foreground == packageName) return false
+        when (e.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (e.repeatCount == 0) {
+                    backDownAt = SystemClock.uptimeMillis(); backLongFired = false
+                    handler.postDelayed(longBack, LONG_BACK_MS)
+                }
+                return true
+            }
+            KeyEvent.ACTION_UP -> {
+                handler.removeCallbacks(longBack)
+                if (!backLongFired) {
+                    // Kurzer Druck: normales Zurueck ausloesen; das kuenstliche Ereignis nicht erneut abfangen
+                    passBack = 1
+                    handler.postDelayed({ passBack = 0 }, 400)
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                }
+                return true
+            }
+        }
+        return true
+    }
+
+    private val longBack = Runnable {
+        backLongFired = true
+        Sounds.open()
+        Prefs(this).bypassUntil = 0L
+        onHome()
     }
 
     private fun onHome() {
@@ -196,6 +238,7 @@ class HomeRedirectService : AccessibilityService() {
 
     companion object {
         const val AMAZON_LAUNCHER = "com.amazon.tv.launcher"
+        private const val LONG_BACK_MS = 600L
         private val NAV_CODES = setOf(
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_HOME
