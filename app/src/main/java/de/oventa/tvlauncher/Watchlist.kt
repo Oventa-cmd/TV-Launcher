@@ -233,11 +233,6 @@ object Watchlist {
         }
     }
 
-    /** Apps, die bei jedem Titel als "Öffnen"-Button erscheinen (nur App-Start, kein Sprung zum Titel). */
-    val ALWAYS_APPS = listOf(
-        "German 4K Ultra" to "tv.german4k.ultra"
-    )
-
     /** Anbieter-Name aus TMDB -> installierte TV-App */
     val PROVIDER_APPS = listOf(
         "Netflix" to "com.netflix.ninja",

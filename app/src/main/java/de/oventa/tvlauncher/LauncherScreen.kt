@@ -172,6 +172,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
     val wlFirst = remember { FocusRequester() }
     var wlDetail by remember { mutableStateOf<Watchlist.Item?>(null) }
     var wlWasOpen by remember { mutableStateOf(false) }
+    var wlFocused by remember { mutableStateOf(false) }
     LaunchedEffect(wlDetail) {
         if (wlDetail != null) wlWasOpen = true
         else if (wlWasOpen) { wlWasOpen = false; delay(80); try { wlFirst.requestFocus() } catch (_: Exception) { } }
@@ -262,7 +263,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                     first = wlFirst,
                     up = gear,
                     down = if (shown.isNotEmpty()) firstTile else null,
-                    onFocus = { it -> focusedLabel = it.title },
+                    onFocus = { it -> focusedLabel = it.title; wlFocused = true },
                     onClick = { it -> wlDetail = it; Sounds.open() }
                 )
             }
@@ -279,8 +280,8 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                 ) { t ->
                     Text(
                         t.ifEmpty { " " },
-                        color = White, fontSize = 38.sp, fontWeight = FontWeight.Bold,
-                        letterSpacing = (-1.2).sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        color = White, fontSize = if (wlFocused) 24.sp else 38.sp, fontWeight = FontWeight.Bold,
+                        letterSpacing = if (wlFocused) (-0.5).sp else (-1.2).sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
                 if (wlItems.isEmpty()) Text("OK zum Öffnen · Menü-Taste für Einstellungen", color = Muted, fontSize = 13.sp)
@@ -310,7 +311,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                         firstTile = firstTile,
                         gear = if (wlItems.isNotEmpty()) wlFirst else gear,
                         downTo = if (inputs.isNotEmpty()) firstPill else null,
-                        onFocus = { app -> focusedLabel = app.label; LauncherMemory.focusedPkg = app.packageName; LauncherMemory.focusedLabel = app.label },
+                        onFocus = { app -> wlFocused = false; focusedLabel = app.label; LauncherMemory.focusedPkg = app.packageName; LauncherMemory.focusedLabel = app.label },
                         onClick = { app -> state.launch(app.packageName) }
                     )
                 }
@@ -830,6 +831,8 @@ private fun ActionRow(label: String, value: String?, modifier: Modifier = Modifi
 
 // ---------------- Watchlist "Als Nächstes" ----------------
 
+private val CARD_MARGIN = 12.dp
+
 @Composable
 private fun rememberTmdbImage(path: String?, size: String): ImageBitmap? {
     val ctx = LocalContext.current
@@ -850,10 +853,10 @@ private fun WatchlistRow(
         val a = seg(introP(), 0.22f, 0.40f)
         alpha = a; translationY = (1f - a) * 24.dp.toPx()
     }) {
-        Text("ALS NÄCHSTES", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, modifier = Modifier.padding(start = 6.dp, bottom = 8.dp))
+        Text("ALS NÄCHSTES", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, modifier = Modifier.padding(start = 6.dp, bottom = 2.dp))
         Row(
-            Modifier.fillMaxWidth().height(112.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier.offset(x = 6.dp - CARD_MARGIN).fillMaxWidth().height(118.dp).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             items.forEachIndexed { i, it ->
@@ -878,14 +881,16 @@ private fun WatchCard(it: Watchlist.Item, modifier: Modifier, onFocus: () -> Uni
     val shape = RoundedCornerShape(12.dp)
     val bg = rememberTmdbImage(it.backdrop ?: it.poster, "w780")
     val logo = rememberTmdbImage(it.logo, "w300")
+    // Fokus-Ziel mit Rand: beim Scrollen bleibt die vergroesserte Karte komplett sichtbar
     Box(
         modifier
-            .size(170.dp, 96.dp)
+            .size(170.dp + CARD_MARGIN * 2, 96.dp + 16.dp)
             .onFocusChanged { st -> f = st.isFocused; if (st.isFocused) { onFocus(); Sounds.nav() } }
-            .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
+            .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() },
+        contentAlignment = Alignment.Center
     ) {
         Box(
-            Modifier.fillMaxSize()
+            Modifier.size(170.dp, 96.dp)
                 .graphicsLayer { scaleX = s; scaleY = s }
                 .shadow(if (f) 20.dp else 4.dp, shape, clip = false)
                 .clip(shape)
@@ -894,8 +899,8 @@ private fun WatchCard(it: Watchlist.Item, modifier: Modifier, onFocus: () -> Uni
             if (bg != null) Image(bg, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))))
             Column(Modifier.align(Alignment.BottomStart).padding(start = 10.dp, end = 10.dp, bottom = 9.dp)) {
-                if (logo != null) Image(logo, it.title, contentScale = ContentScale.Fit, alignment = Alignment.BottomStart, modifier = Modifier.height(24.dp).width(110.dp))
-                else Text(it.title, color = White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (logo != null) Image(logo, it.title, contentScale = ContentScale.Fit, alignment = Alignment.BottomStart, modifier = Modifier.height(20.dp).width(100.dp))
+                else Text(it.title, color = White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(it.subtitle, color = White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 3.dp))
             }
             if (it.total > 0) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(White.copy(alpha = 0.18f))) {
@@ -920,8 +925,6 @@ private fun WatchlistDetail(
     val apps = Watchlist.PROVIDER_APPS
         .filter { (n, pkg) -> item.providers.any { p -> p.equals(n, true) } && installed(pkg) }
         .distinctBy { it.second }
-        .plus(Watchlist.ALWAYS_APPS.filter { (_, pkg) -> installed(pkg) })
-        .distinctBy { it.second }
     val first = remember { FocusRequester() }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<String?>(null) }
@@ -934,8 +937,8 @@ private fun WatchlistDetail(
         Column(Modifier.align(Alignment.CenterStart).padding(start = 70.dp, end = 70.dp).width(460.dp)) {
             Text(if (item.status == "watching") "WEITER GEHT’S" else "ALS NÄCHSTES", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp)
             Spacer(Modifier.height(10.dp))
-            if (logo != null) Image(logo, item.title, contentScale = ContentScale.Fit, alignment = Alignment.CenterStart, modifier = Modifier.height(70.dp).width(320.dp))
-            else Text(item.title, color = White, fontSize = 40.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
+            if (logo != null) Image(logo, item.title, contentScale = ContentScale.Fit, alignment = Alignment.CenterStart, modifier = Modifier.height(54.dp).width(260.dp))
+            else Text(item.title, color = White, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp)
             Spacer(Modifier.height(12.dp))
             val info = buildList {
                 add(item.subtitle)
