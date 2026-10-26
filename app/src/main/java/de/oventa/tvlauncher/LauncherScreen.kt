@@ -920,6 +920,8 @@ private fun WatchlistDetail(
     val apps = Watchlist.PROVIDER_APPS
         .filter { (n, pkg) -> item.providers.any { p -> p.equals(n, true) } && installed(pkg) }
         .distinctBy { it.second }
+        .plus(Watchlist.ALWAYS_APPS.filter { (_, pkg) -> installed(pkg) })
+        .distinctBy { it.second }
     val first = remember { FocusRequester() }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<String?>(null) }
