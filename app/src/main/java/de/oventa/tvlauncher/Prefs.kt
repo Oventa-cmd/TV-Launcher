@@ -19,6 +19,10 @@ class Prefs(context: Context) {
         get() = sp.getInt("wallRotate", 15)
         set(v) { sp.edit().putInt("wallRotate", v).apply() }
 
+    var watchlist: Boolean
+        get() = sp.getBoolean("watchlist", true)
+        set(v) { sp.edit().putBoolean("watchlist", v).apply() }
+
     var weather: Boolean
         get() = sp.getBoolean("weather", true)
         set(v) { sp.edit().putBoolean("weather", v).apply() }

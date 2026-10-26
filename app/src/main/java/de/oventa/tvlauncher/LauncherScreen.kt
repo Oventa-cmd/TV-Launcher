@@ -79,6 +79,9 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -163,6 +166,16 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
     val intro = remember { Animatable(if (anims && (isOverlay || !LauncherMemory.introRecent())) 0f else 1f) }
     val introP: () -> Float = { intro.value }
     var settingsOpen by remember { mutableStateOf(false) }
+    val ctx = LocalContext.current
+    LaunchedEffect(resumeTick) { Watchlist.init(ctx); Watchlist.refresh(ctx) }
+    val wlItems = if (state.watchlistOn.value && Watchlist.connected.value) Watchlist.items.value else emptyList()
+    val wlFirst = remember { FocusRequester() }
+    var wlDetail by remember { mutableStateOf<Watchlist.Item?>(null) }
+    var wlWasOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(wlDetail) {
+        if (wlDetail != null) wlWasOpen = true
+        else if (wlWasOpen) { wlWasOpen = false; delay(80); try { wlFirst.requestFocus() } catch (_: Exception) { } }
+    }
     var appsPage by remember { mutableStateOf(false) }
     var focusedLabel by remember { mutableStateOf(LauncherMemory.focusedLabel) }
     val firstTile = remember { FocusRequester() }
@@ -218,7 +231,8 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                     }
                     // Zurueck: schliesst die Einstellungen, verlaesst den Launcher aber nie
                     e.key == Key.Back -> {
-                        if (e.type == KeyEventType.KeyUp && settingsOpen) {
+                        if (e.type == KeyEventType.KeyUp && wlDetail != null) { wlDetail = null; Sounds.close() }
+                        else if (e.type == KeyEventType.KeyUp && settingsOpen) {
                             if (appsPage) appsPage = false else settingsOpen = false
                             Sounds.close()
                         }
@@ -231,12 +245,26 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
         Wallpaper(wallpaper, anims)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.10f), Color.Black.copy(alpha = 0.40f)))))
 
-        Column(Modifier.fillMaxSize().padding(start = 60.dp, end = 60.dp, top = 30.dp, bottom = 30.dp)) {
-            TopBar(weather = if (weatherOn) Weather.current.value else null, onSettings = { settingsOpen = true; Sounds.open() }, gear = gear, firstTileRef = if (shown.isNotEmpty()) firstTile else null)
+        // Waehrend die Detailansicht offen ist, wird der Startbildschirm ausgeblendet (kein Fokus dahinter)
+        if (wlDetail == null) Column(Modifier.fillMaxSize().padding(start = 60.dp, end = 60.dp, top = 30.dp, bottom = 30.dp)) {
+            TopBar(weather = if (weatherOn) Weather.current.value else null, onSettings = { settingsOpen = true; Sounds.open() }, gear = gear, firstTileRef = if (wlItems.isNotEmpty()) wlFirst else if (shown.isNotEmpty()) firstTile else null)
 
             if (greetingOn) {
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(if (wlItems.isNotEmpty()) 12.dp else 22.dp))
                 Greeting(introP, resumeTick)
+            }
+
+            if (wlItems.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                WatchlistRow(
+                    items = wlItems,
+                    introP = introP,
+                    first = wlFirst,
+                    up = gear,
+                    down = if (shown.isNotEmpty()) firstTile else null,
+                    onFocus = { it -> focusedLabel = it.title },
+                    onClick = { it -> wlDetail = it; Sounds.open() }
+                )
             }
 
             Spacer(Modifier.weight(1f))
@@ -255,7 +283,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                         letterSpacing = (-1.2).sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text("OK zum Öffnen · Menü-Taste für Einstellungen", color = Muted, fontSize = 13.sp)
+                if (wlItems.isEmpty()) Text("OK zum Öffnen · Menü-Taste für Einstellungen", color = Muted, fontSize = 13.sp)
             }
 
             Spacer(Modifier.height(14.dp))
@@ -280,7 +308,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                         introP = introP,
                         targetPkg = targetPkg,
                         firstTile = firstTile,
-                        gear = gear,
+                        gear = if (wlItems.isNotEmpty()) wlFirst else gear,
                         downTo = if (inputs.isNotEmpty()) firstPill else null,
                         onFocus = { app -> focusedLabel = app.label; LauncherMemory.focusedPkg = app.packageName; LauncherMemory.focusedLabel = app.label },
                         onClick = { app -> state.launch(app.packageName) }
@@ -301,6 +329,20 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                     }
                 }
             }
+        }
+
+        AnimatedVisibility(
+            visible = wlDetail != null,
+            enter = fadeIn(tween(220)),
+            exit = fadeOut(tween(180))
+        ) {
+            val d = wlDetail
+            if (d != null) WatchlistDetail(
+                item = Watchlist.items.value.firstOrNull { it.key == d.key } ?: d,
+                installed = { state.isInstalled(it) },
+                onOpenApp = { pkg -> wlDetail = null; state.launch(pkg) },
+                onClose = { wlDetail = null; Sounds.close() }
+            )
         }
 
         AnimatedVisibility(
@@ -660,6 +702,14 @@ private fun SettingsPanel(
         Section("Startbildschirm")
         ActionRow("Apps ein-/ausblenden", "${visible.count { p -> apps.any { it.packageName == p } }} sichtbar", Modifier.focusRequester(appsEntry)) { setAppsPage(true) }
         Spacer(Modifier.height(18.dp))
+        Section("Watchlist „Als Nächstes“")
+        if (Watchlist.connected.value) {
+            ToggleRow("Auf dem Startbildschirm zeigen", activity.watchlistOn.value, { activity.setWatchlistOn(!activity.watchlistOn.value) }, null)
+            ActionRow("Konto", Watchlist.email.value.ifBlank { "verbunden" }) { activity.openWatchlistLogin() }
+        } else {
+            ActionRow("Watchlist verbinden", "Anmelden") { activity.openWatchlistLogin() }
+        }
+        Spacer(Modifier.height(18.dp))
         Section("Begrüßung & Effekte")
         ToggleRow("Begrüßung (Guten Morgen …)", activity.greeting.value, { activity.setGreeting(!activity.greeting.value) }, null)
         ToggleRow("Klick-Sounds", activity.sounds.value, { activity.setSounds(!activity.sounds.value) }, null)
@@ -774,5 +824,173 @@ private fun ActionRow(label: String, value: String?, modifier: Modifier = Modifi
         Text(label, color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (value != null) Text(value, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
         Text("›", color = Muted, fontSize = 16.sp, modifier = Modifier.padding(start = 6.dp))
+    }
+}
+
+
+// ---------------- Watchlist "Als Nächstes" ----------------
+
+@Composable
+private fun rememberTmdbImage(path: String?, size: String): ImageBitmap? {
+    val ctx = LocalContext.current
+    return produceState<ImageBitmap?>(null, path, size) { value = Watchlist.image(ctx, path, size) }.value
+}
+
+@Composable
+private fun WatchlistRow(
+    items: List<Watchlist.Item>,
+    introP: () -> Float,
+    first: FocusRequester,
+    up: FocusRequester,
+    down: FocusRequester?,
+    onFocus: (Watchlist.Item) -> Unit,
+    onClick: (Watchlist.Item) -> Unit
+) {
+    Column(Modifier.graphicsLayer {
+        val a = seg(introP(), 0.22f, 0.40f)
+        alpha = a; translationY = (1f - a) * 24.dp.toPx()
+    }) {
+        Text("ALS NÄCHSTES", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, modifier = Modifier.padding(start = 6.dp, bottom = 8.dp))
+        Row(
+            Modifier.fillMaxWidth().height(112.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items.forEachIndexed { i, it ->
+                WatchCard(
+                    it,
+                    (if (i == 0) Modifier.focusRequester(first) else Modifier).focusProperties {
+                        this.up = up
+                        if (down != null) this.down = down
+                    },
+                    onFocus = { onFocus(it) },
+                    onClick = { onClick(it) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WatchCard(it: Watchlist.Item, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
+    var f by remember { mutableStateOf(false) }
+    val s by animateFloatAsState(if (f) 1.10f else 1f, Smooth, label = "wc")
+    val shape = RoundedCornerShape(12.dp)
+    val bg = rememberTmdbImage(it.backdrop ?: it.poster, "w780")
+    val logo = rememberTmdbImage(it.logo, "w300")
+    Box(
+        modifier
+            .size(170.dp, 96.dp)
+            .onFocusChanged { st -> f = st.isFocused; if (st.isFocused) { onFocus(); Sounds.nav() } }
+            .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
+    ) {
+        Box(
+            Modifier.fillMaxSize()
+                .graphicsLayer { scaleX = s; scaleY = s }
+                .shadow(if (f) 20.dp else 4.dp, shape, clip = false)
+                .clip(shape)
+                .background(Color(0xFF1C1C22))
+        ) {
+            if (bg != null) Image(bg, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))))
+            Column(Modifier.align(Alignment.BottomStart).padding(start = 10.dp, end = 10.dp, bottom = 9.dp)) {
+                if (logo != null) Image(logo, it.title, contentScale = ContentScale.Fit, alignment = Alignment.BottomStart, modifier = Modifier.height(24.dp).width(110.dp))
+                else Text(it.title, color = White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(it.subtitle, color = White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 3.dp))
+            }
+            if (it.total > 0) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(White.copy(alpha = 0.18f))) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(it.progress).background(White))
+            }
+            Box(Modifier.fillMaxSize().border(if (f) 2.dp else 1.dp, if (f) White else White.copy(alpha = 0.15f), shape))
+        }
+    }
+}
+
+@Composable
+private fun WatchlistDetail(
+    item: Watchlist.Item,
+    installed: (String) -> Boolean,
+    onOpenApp: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val bg = rememberTmdbImage(item.backdrop ?: item.poster, "w1280")
+    val logo = rememberTmdbImage(item.logo, "w500")
+    val apps = Watchlist.PROVIDER_APPS
+        .filter { (n, pkg) -> item.providers.any { p -> p.equals(n, true) } && installed(pkg) }
+        .distinctBy { it.second }
+    val first = remember { FocusRequester() }
+    var busy by remember { mutableStateOf(false) }
+    var msg by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(item.key) { delay(80); try { first.requestFocus() } catch (_: Exception) { } }
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        if (bg != null) Image(bg, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.92f), Color.Black.copy(alpha = 0.55f), Color.Transparent))))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)))))
+        Column(Modifier.align(Alignment.CenterStart).padding(start = 70.dp, end = 70.dp).width(460.dp)) {
+            Text(if (item.status == "watching") "WEITER GEHT’S" else "ALS NÄCHSTES", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp)
+            Spacer(Modifier.height(10.dp))
+            if (logo != null) Image(logo, item.title, contentScale = ContentScale.Fit, alignment = Alignment.CenterStart, modifier = Modifier.height(70.dp).width(320.dp))
+            else Text(item.title, color = White, fontSize = 40.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
+            Spacer(Modifier.height(12.dp))
+            val info = buildList {
+                add(item.subtitle)
+                if (item.total > 0) add("${item.done} von ${item.total} Folgen")
+                if (item.providers.isNotEmpty()) add(item.providers.joinToString(", "))
+            }.joinToString("  ·  ")
+            Text(info, color = Muted, fontSize = 14.sp)
+            if (item.total > 0) {
+                Box(Modifier.padding(top = 12.dp).width(300.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(White.copy(alpha = 0.18f))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(item.progress).background(White))
+                }
+            }
+            Spacer(Modifier.height(26.dp))
+            var firstUsed = false
+            fun fm(): Modifier = if (!firstUsed) { firstUsed = true; Modifier.focusRequester(first) } else Modifier
+            apps.forEach { (name, pkg) ->
+                DetailButton("▶  In $name öffnen", primary = true, modifier = fm()) { onOpenApp(pkg) }
+            }
+            if (item.next != null) {
+                DetailButton(
+                    if (busy) "Speichere …" else "✓  ${item.subtitle} als gesehen markieren",
+                    primary = apps.isEmpty(), modifier = fm()
+                ) {
+                    if (busy) return@DetailButton
+                    busy = true
+                    scope.launch {
+                        val ok = Watchlist.markNext(ctx, item)
+                        busy = false
+                        msg = if (ok) "Gespeichert" else "Konnte nicht speichern"
+                        if (ok) Sounds.select()
+                    }
+                }
+            }
+            DetailButton("Zurück", primary = false, modifier = fm()) { onClose() }
+            if (msg != null) Text(msg!!, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun DetailButton(label: String, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    var f by remember { mutableStateOf(false) }
+    val s by animateFloatAsState(if (f) 1.05f else 1f, Smooth, label = "db")
+    val shape = RoundedCornerShape(24.dp)
+    Box(
+        modifier
+            .padding(vertical = 5.dp)
+            .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
+            .clickable(remember { MutableInteractionSource() }, null) { onClick() }
+    ) {
+        Box(
+            Modifier
+                .graphicsLayer { scaleX = s; scaleY = s; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) }
+                .then(if (f) Modifier.background(White, shape) else if (primary) Modifier.glass(shape, focused = true) else Modifier.glass(shape))
+                .padding(horizontal = 22.dp, vertical = 11.dp)
+        ) {
+            Text(label, color = if (f) Color.Black else White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        }
     }
 }

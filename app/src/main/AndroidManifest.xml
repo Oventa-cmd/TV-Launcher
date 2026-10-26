@@ -67,6 +67,12 @@
                 android:resource="@xml/home_redirect_service" />
         </service>
 
+        <activity
+            android:name=".WatchlistLoginActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:windowSoftInputMode="adjustPan" />
+
         <service
             android:name=".Screensaver"
             android:exported="true"

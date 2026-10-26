@@ -60,6 +60,7 @@ class LauncherState(
     val showInputs = mutableStateOf(prefs.showInputs)
     val wallRotate = mutableStateOf(prefs.wallRotate)
     val weather = mutableStateOf(prefs.weather)
+    val watchlistOn = mutableStateOf(prefs.watchlist)
     val greeting = mutableStateOf(prefs.greeting)
     val userName = mutableStateOf(prefs.userName)
     val sounds = mutableStateOf(prefs.sounds)
@@ -81,6 +82,7 @@ class LauncherState(
         wallpaper.value = prefs.wallpaper
         wallRotate.value = prefs.wallRotate
         weather.value = prefs.weather
+        watchlistOn.value = prefs.watchlist
         showInputs.value = prefs.showInputs
         greeting.value = prefs.greeting
         userName.value = prefs.userName
@@ -133,6 +135,12 @@ class LauncherState(
     fun setWallpaper(i: Int) { wallpaper.value = i; prefs.wallpaper = i }
     fun setWallRotate(m: Int) { wallRotate.value = m; prefs.wallRotate = m }
     fun setWeather(b: Boolean) { weather.value = b; prefs.weather = b }
+    fun setWatchlistOn(b: Boolean) { watchlistOn.value = b; prefs.watchlist = b }
+    fun openWatchlistLogin() {
+        HomeRedirectService.instance?.hideOverlay()
+        try { ctx.startActivity(Intent(ctx, WatchlistLoginActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }
+    }
+    fun isInstalled(pkg: String) = Apps.isInstalled(ctx, pkg)
 
     fun setLongBackHome(b: Boolean) { longBackHome.value = b; prefs.longBackHome = b }
     fun cycleScreensaver() {
