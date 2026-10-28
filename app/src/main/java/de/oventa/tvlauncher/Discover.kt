@@ -162,6 +162,16 @@ object Discover {
         )
     }
 
+    /** Freie Suche nach Serien und Filmen. */
+    suspend fun search(c: Context, query: String): List<Pick>? = withContext(Dispatchers.IO) {
+        try {
+            val key = Watchlist.tmdbKey(c) ?: return@withContext null
+            (1..2).flatMap { p -> picks(get(key, "/search/multi", mapOf("query" to query, "include_adult" to "false", "page" to "$p")), null) }
+                .filter { it.backdrop != null || it.poster != null }
+                .distinctBy { it.key }
+        } catch (_: Exception) { null }
+    }
+
     // ---------- Details (fuer Detailansicht + Hinzufuegen) ----------
     suspend fun details(c: Context, type: String, id: Int): JSONObject? = withContext(Dispatchers.IO) {
         try {

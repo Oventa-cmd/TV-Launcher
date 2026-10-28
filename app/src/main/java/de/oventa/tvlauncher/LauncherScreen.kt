@@ -285,6 +285,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                     up = gear,
                     down = if (shown.isNotEmpty()) firstTile else null,
                     onRowFocus = { wlRowFocused = it },
+                    onSearch = { state.openSearch() },
                     onFocus = { c -> focusedLabel = c.title; focusedSub = c.subtitle; wlFocused = true },
                     onClick = { c -> wlDetail = c.target; Sounds.open() }
                 )
@@ -863,7 +864,7 @@ private fun ActionRow(label: String, value: String?, modifier: Modifier = Modifi
 
 // ---------------- Watchlist "Als Nächstes" ----------------
 
-private val CARD_MARGIN = 12.dp
+internal val CARD_MARGIN = 12.dp
 
 @Composable
 private fun rememberTmdbImage(path: String?, size: String): ImageBitmap? {
@@ -872,7 +873,7 @@ private fun rememberTmdbImage(path: String?, size: String): ImageBitmap? {
 }
 
 /** Einheitliche Karte fuer Watchlist-Titel und Entdecken-Vorschlaege. */
-private data class RowCard(
+internal data class RowCard(
     val key: String, val title: String, val image: String?, val logo: String?,
     val subtitle: String, val progress: Float?, val rank: Int?, val target: Any
 )
@@ -895,6 +896,7 @@ private fun WatchlistRow(
     up: FocusRequester,
     down: FocusRequester?,
     onRowFocus: (Boolean) -> Unit,
+    onSearch: () -> Unit,
     onFocus: (RowCard) -> Unit,
     onClick: (RowCard) -> Unit
 ) {
@@ -909,8 +911,6 @@ private fun WatchlistRow(
             AnimatedContent(targetState = label, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }, label = "tabl") { l ->
                 Text(l.uppercase(), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp)
             }
-            if (!rowFocus) Text("   ·   ◀ weitere Kategorien", color = White.copy(alpha = 0.35f), fontSize = 10.sp)
-            else Spacer(Modifier.width(1.dp))
             // Punkte als Hinweis, welcher Reiter gerade laeuft
             Spacer(Modifier.width(10.dp))
             tabs.forEach { t ->
@@ -930,7 +930,7 @@ private fun WatchlistRow(
                 enter = androidx.compose.animation.expandHorizontally(tween(260)) + fadeIn(tween(220)),
                 exit = androidx.compose.animation.shrinkHorizontally(tween(220)) + fadeOut(tween(160))
             ) {
-                TabRail(tabs, tab, tabReq, onTab, right = first, up = up, down = down)
+                TabRail(tabs, tab, tabReq, onTab, right = first, up = up, down = down, onSearch = onSearch)
             }
             Row(
                 Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()),
@@ -974,7 +974,7 @@ private fun WatchlistRow(
 @Composable
 private fun TabRail(
     tabs: List<Discover.Tab>, tab: String, req: Map<String, FocusRequester>, onTab: (String) -> Unit,
-    right: FocusRequester, up: FocusRequester, down: FocusRequester?
+    right: FocusRequester, up: FocusRequester, down: FocusRequester?, onSearch: () -> Unit
 ) {
     Column(
         Modifier
@@ -985,6 +985,26 @@ private fun TabRail(
             .padding(vertical = 6.dp, horizontal = 6.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        // Suche als oberster Eintrag (oeffnet eigenen Bildschirm, wechselt keinen Reiter)
+        run {
+            var f by remember { mutableStateOf(false) }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 1.dp)
+                    .focusProperties { this.right = right; this.up = up }
+                    .onFocusChanged { st -> f = st.isFocused; if (st.isFocused) Sounds.nav() }
+                    .clickable(remember { MutableInteractionSource() }, null) { Sounds.open(); onSearch() }
+                    .background(if (f) White else White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("⌕", color = if (f) Color.Black else White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(7.dp))
+                Text("Suchen", fontSize = 11.sp, color = if (f) Color.Black else White, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(3.dp))
+        }
         tabs.forEachIndexed { i, t ->
             var f by remember { mutableStateOf(false) }
             val sel = t.id == tab
@@ -995,7 +1015,6 @@ private fun TabRail(
                     .then(req[t.id]?.let { Modifier.focusRequester(it) } ?: Modifier)
                     .focusProperties {
                         this.right = right
-                        if (i == 0) this.up = up
                         if (i == tabs.lastIndex && down != null) this.down = down
                     }
                     .onFocusChanged { st -> f = st.isFocused; if (st.isFocused) { Sounds.nav(); if (!sel) onTab(t.id) } }
@@ -1017,7 +1036,7 @@ private fun TabRail(
 }
 
 @Composable
-private fun WatchCard(it: RowCard, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
+internal fun WatchCard(it: RowCard, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     val s by animateFloatAsState(if (f) 1.10f else 1f, Smooth, label = "wc")
     val shape = RoundedCornerShape(12.dp)
@@ -1147,7 +1166,7 @@ private fun DetailButton(label: String, primary: Boolean, modifier: Modifier, on
 }
 
 @Composable
-private fun PickDetail(
+internal fun PickDetail(
     pick: Discover.Pick,
     installed: (String) -> Boolean,
     onOpenApp: (String) -> Unit,
@@ -1211,3 +1230,6 @@ private fun PickDetail(
         }
     }
 }
+
+internal fun pickCard(p: Discover.Pick, onList: Boolean) =
+    RowCard(p.key, p.title, p.backdrop ?: p.poster, null, if (onList) "✓ Auf deiner Watchlist" else p.info, null, null, p)

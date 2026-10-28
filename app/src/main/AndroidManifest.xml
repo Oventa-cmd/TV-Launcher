@@ -68,6 +68,12 @@
         </service>
 
         <activity
+            android:name=".SearchActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Launcher"
+            android:windowSoftInputMode="adjustNothing|stateVisible" />
+
+        <activity
             android:name=".WatchlistLoginActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
