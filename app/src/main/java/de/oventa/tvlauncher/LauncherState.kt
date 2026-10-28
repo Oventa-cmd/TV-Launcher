@@ -22,6 +22,8 @@ object LauncherMemory {
     val learningKey = androidx.compose.runtime.mutableStateOf(false)
     /** Aktuell belegte Hauptmenue-Taste (Keycode, 0 = aus). */
     val menuKey = androidx.compose.runtime.mutableStateOf(0)
+    /** Aktiver Reiter der Watchlist-Zeile (geteilt zwischen Overlay und Activity). */
+    val wlTab = androidx.compose.runtime.mutableStateOf("list")
 
     fun keyName(code: Int): String = when (code) {
         0 -> "aus"
@@ -61,6 +63,7 @@ class LauncherState(
     val wallRotate = mutableStateOf(prefs.wallRotate)
     val weather = mutableStateOf(prefs.weather)
     val watchlistOn = mutableStateOf(prefs.watchlist)
+    val wlRotate = mutableStateOf(prefs.wlRotate)
     val greeting = mutableStateOf(prefs.greeting)
     val userName = mutableStateOf(prefs.userName)
     val sounds = mutableStateOf(prefs.sounds)
@@ -83,6 +86,7 @@ class LauncherState(
         wallRotate.value = prefs.wallRotate
         weather.value = prefs.weather
         watchlistOn.value = prefs.watchlist
+        wlRotate.value = prefs.wlRotate
         showInputs.value = prefs.showInputs
         greeting.value = prefs.greeting
         userName.value = prefs.userName
@@ -136,6 +140,11 @@ class LauncherState(
     fun setWallRotate(m: Int) { wallRotate.value = m; prefs.wallRotate = m }
     fun setWeather(b: Boolean) { weather.value = b; prefs.weather = b }
     fun setWatchlistOn(b: Boolean) { watchlistOn.value = b; prefs.watchlist = b }
+    fun cycleWlRotate() {
+        val steps = listOf(0, 15, 30, 60)
+        val n = steps[(steps.indexOf(wlRotate.value) + 1).mod(steps.size)]
+        wlRotate.value = n; prefs.wlRotate = n
+    }
     fun openWatchlistLogin() {
         HomeRedirectService.instance?.hideOverlay()
         try { ctx.startActivity(Intent(ctx, WatchlistLoginActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }

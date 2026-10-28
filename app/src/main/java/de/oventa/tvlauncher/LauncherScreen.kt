@@ -87,6 +87,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.key
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -168,9 +169,25 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
     var settingsOpen by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     LaunchedEffect(resumeTick) { Watchlist.init(ctx); Watchlist.refresh(ctx) }
-    val wlItems = if (state.watchlistOn.value && Watchlist.connected.value) Watchlist.items.value else emptyList()
+    val wlShown = state.watchlistOn.value && Watchlist.connected.value
     val wlFirst = remember { FocusRequester() }
-    var wlDetail by remember { mutableStateOf<Watchlist.Item?>(null) }
+    var wlDetail by remember { mutableStateOf<Any?>(null) }
+    var wlRowFocused by remember { mutableStateOf(false) }
+    var focusedSub by remember { mutableStateOf("") }
+    val wlTabs = remember(Watchlist.allKeys.value) { Discover.tabs() }
+    val wlTab = LauncherMemory.wlTab.value.takeIf { t -> wlTabs.any { it.id == t } } ?: "list"
+    val wlCards = rowCards(wlTab, Watchlist.items.value, Discover.lists.value[wlTab], Watchlist.allKeys.value)
+    LaunchedEffect(wlShown, wlTab, Watchlist.allKeys.value) { if (wlShown) Discover.ensure(ctx, wlTab) }
+    // Reiter automatisch durchrotieren (pausiert, solange die Zeile den Fokus hat)
+    val wlRotate = state.wlRotate.value
+    LaunchedEffect(wlShown, wlRotate, wlRowFocused, wlTab) {
+        if (!wlShown || wlRotate <= 0 || wlRowFocused) return@LaunchedEffect
+        val i = wlTabs.indexOfFirst { it.id == wlTab }
+        val next = wlTabs[(i + 1).mod(wlTabs.size)].id
+        Discover.ensure(ctx, next)
+        delay(wlRotate * 1000L)
+        LauncherMemory.wlTab.value = next
+    }
     var wlWasOpen by remember { mutableStateOf(false) }
     var wlFocused by remember { mutableStateOf(false) }
     LaunchedEffect(wlDetail) {
@@ -248,23 +265,28 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
 
         // Waehrend die Detailansicht offen ist, wird der Startbildschirm ausgeblendet (kein Fokus dahinter)
         if (wlDetail == null) Column(Modifier.fillMaxSize().padding(start = 60.dp, end = 60.dp, top = 30.dp, bottom = 30.dp)) {
-            TopBar(weather = if (weatherOn) Weather.current.value else null, onSettings = { settingsOpen = true; Sounds.open() }, gear = gear, firstTileRef = if (wlItems.isNotEmpty()) wlFirst else if (shown.isNotEmpty()) firstTile else null)
+            TopBar(weather = if (weatherOn) Weather.current.value else null, onSettings = { settingsOpen = true; Sounds.open() }, gear = gear, firstTileRef = if (wlShown) wlFirst else if (shown.isNotEmpty()) firstTile else null)
 
             if (greetingOn) {
-                Spacer(Modifier.height(if (wlItems.isNotEmpty()) 12.dp else 22.dp))
+                Spacer(Modifier.height(if (wlShown) 12.dp else 22.dp))
                 Greeting(introP, resumeTick)
             }
 
-            if (wlItems.isNotEmpty()) {
+            if (wlShown) {
                 Spacer(Modifier.height(14.dp))
                 WatchlistRow(
-                    items = wlItems,
+                    tabs = wlTabs,
+                    tab = wlTab,
+                    onTab = { LauncherMemory.wlTab.value = it },
+                    cards = wlCards,
+                    loading = wlTab in Discover.loading.value,
                     introP = introP,
                     first = wlFirst,
                     up = gear,
                     down = if (shown.isNotEmpty()) firstTile else null,
-                    onFocus = { it -> focusedLabel = it.title; wlFocused = true },
-                    onClick = { it -> wlDetail = it; Sounds.open() }
+                    onRowFocus = { wlRowFocused = it },
+                    onFocus = { c -> focusedLabel = c.title; focusedSub = c.subtitle; wlFocused = true },
+                    onClick = { c -> wlDetail = c.target; Sounds.open() }
                 )
             }
 
@@ -284,7 +306,8 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                         letterSpacing = if (wlFocused) (-0.5).sp else (-1.2).sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
-                if (wlItems.isEmpty()) Text("OK zum Öffnen · Menü-Taste für Einstellungen", color = Muted, fontSize = 13.sp)
+                if (wlFocused && focusedSub.isNotBlank()) Text(focusedSub, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                else if (!wlShown) Text("OK zum Öffnen · Menü-Taste für Einstellungen", color = Muted, fontSize = 13.sp)
             }
 
             Spacer(Modifier.height(14.dp))
@@ -309,7 +332,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                         introP = introP,
                         targetPkg = targetPkg,
                         firstTile = firstTile,
-                        gear = if (wlItems.isNotEmpty()) wlFirst else gear,
+                        gear = if (wlShown) wlFirst else gear,
                         downTo = if (inputs.isNotEmpty()) firstPill else null,
                         onFocus = { app -> wlFocused = false; focusedLabel = app.label; LauncherMemory.focusedPkg = app.packageName; LauncherMemory.focusedLabel = app.label },
                         onClick = { app -> state.launch(app.packageName) }
@@ -337,13 +360,20 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
             enter = fadeIn(tween(220)),
             exit = fadeOut(tween(180))
         ) {
-            val d = wlDetail
-            if (d != null) WatchlistDetail(
-                item = Watchlist.items.value.firstOrNull { it.key == d.key } ?: d,
-                installed = { state.isInstalled(it) },
-                onOpenApp = { pkg -> wlDetail = null; state.launch(pkg) },
-                onClose = { wlDetail = null; Sounds.close() }
-            )
+            when (val d = wlDetail) {
+                is Watchlist.Item -> WatchlistDetail(
+                    item = Watchlist.items.value.firstOrNull { it.key == d.key } ?: d,
+                    installed = { state.isInstalled(it) },
+                    onOpenApp = { pkg -> wlDetail = null; state.launch(pkg) },
+                    onClose = { wlDetail = null; Sounds.close() }
+                )
+                is Discover.Pick -> PickDetail(
+                    pick = d,
+                    installed = { state.isInstalled(it) },
+                    onOpenApp = { pkg -> wlDetail = null; state.launch(pkg) },
+                    onClose = { wlDetail = null; Sounds.close() }
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -706,6 +736,8 @@ private fun SettingsPanel(
         Section("Watchlist „Als Nächstes“")
         if (Watchlist.connected.value) {
             ToggleRow("Auf dem Startbildschirm zeigen", activity.watchlistOn.value, { activity.setWatchlistOn(!activity.watchlistOn.value) }, null)
+            val wr = activity.wlRotate.value
+            ActionRow("Kategorien automatisch wechseln", if (wr == 0) "Aus" else if (wr >= 60) "jede Minute" else "alle $wr s") { activity.cycleWlRotate() }
             ActionRow("Konto", Watchlist.email.value.ifBlank { "verbunden" }) { activity.openWatchlistLogin() }
         } else {
             ActionRow("Watchlist verbinden", "Anmelden") { activity.openWatchlistLogin() }
@@ -839,35 +871,145 @@ private fun rememberTmdbImage(path: String?, size: String): ImageBitmap? {
     return produceState<ImageBitmap?>(null, path, size) { value = Watchlist.image(ctx, path, size) }.value
 }
 
+/** Einheitliche Karte fuer Watchlist-Titel und Entdecken-Vorschlaege. */
+private data class RowCard(
+    val key: String, val title: String, val image: String?, val logo: String?,
+    val subtitle: String, val progress: Float?, val rank: Int?, val target: Any
+)
+
+private fun rowCards(tab: String, items: List<Watchlist.Item>, picks: List<Discover.Pick>?, onList: Set<String>): List<RowCard> =
+    if (tab == "list") items.map { RowCard(it.key, it.title, it.backdrop ?: it.poster, it.logo, it.subtitle, if (it.total > 0) it.progress else null, null, it) }
+    else (picks ?: emptyList()).filter { it.key !in onList }.take(if (tab == "top") 10 else 20).mapIndexed { i, p ->
+        RowCard(p.key, p.title, p.backdrop ?: p.poster, null, p.reason ?: p.info, null, if (tab == "top") i + 1 else null, p)
+    }
+
 @Composable
 private fun WatchlistRow(
-    items: List<Watchlist.Item>,
+    tabs: List<Discover.Tab>,
+    tab: String,
+    onTab: (String) -> Unit,
+    cards: List<RowCard>,
+    loading: Boolean,
     introP: () -> Float,
     first: FocusRequester,
     up: FocusRequester,
     down: FocusRequester?,
-    onFocus: (Watchlist.Item) -> Unit,
-    onClick: (Watchlist.Item) -> Unit
+    onRowFocus: (Boolean) -> Unit,
+    onFocus: (RowCard) -> Unit,
+    onClick: (RowCard) -> Unit
 ) {
+    var rowFocus by remember { mutableStateOf(false) }
+    val tabReq = remember(tabs.map { it.id }) { tabs.associate { it.id to FocusRequester() } }
+    val label = tabs.firstOrNull { it.id == tab }?.label ?: ""
     Column(Modifier.graphicsLayer {
         val a = seg(introP(), 0.22f, 0.40f)
         alpha = a; translationY = (1f - a) * 24.dp.toPx()
     }) {
-        Text("ALS NÄCHSTES", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, modifier = Modifier.padding(start = 6.dp, bottom = 2.dp))
+        Row(Modifier.padding(start = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            AnimatedContent(targetState = label, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }, label = "tabl") { l ->
+                Text(l.uppercase(), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp)
+            }
+            if (!rowFocus) Text("   ·   ◀ weitere Kategorien", color = White.copy(alpha = 0.35f), fontSize = 10.sp)
+            else Spacer(Modifier.width(1.dp))
+            // Punkte als Hinweis, welcher Reiter gerade laeuft
+            Spacer(Modifier.width(10.dp))
+            tabs.forEach { t ->
+                Box(Modifier.padding(horizontal = 2.dp).size(if (t.id == tab) 6.dp else 4.dp).background(White.copy(alpha = if (t.id == tab) 0.9f else 0.3f), CircleShape))
+            }
+        }
         Row(
-            Modifier.offset(x = 6.dp - CARD_MARGIN).fillMaxWidth().height(118.dp).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            Modifier
+                .offset(x = 6.dp - CARD_MARGIN)
+                .fillMaxWidth()
+                .height(118.dp)
+                .onFocusChanged { st -> if (st.hasFocus != rowFocus) { rowFocus = st.hasFocus; onRowFocus(st.hasFocus) } },
             verticalAlignment = Alignment.CenterVertically
         ) {
-            items.forEachIndexed { i, it ->
-                WatchCard(
-                    it,
-                    (if (i == 0) Modifier.focusRequester(first) else Modifier).focusProperties {
-                        this.up = up
-                        if (down != null) this.down = down
-                    },
-                    onFocus = { onFocus(it) },
-                    onClick = { onClick(it) }
+            AnimatedVisibility(
+                visible = rowFocus,
+                enter = androidx.compose.animation.expandHorizontally(tween(260)) + fadeIn(tween(220)),
+                exit = androidx.compose.animation.shrinkHorizontally(tween(220)) + fadeOut(tween(160))
+            ) {
+                TabRail(tabs, tab, tabReq, onTab, right = first, up = up, down = down)
+            }
+            Row(
+                Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (cards.isEmpty()) {
+                    // Fokussierbarer Platzhalter, damit Navigation hierher immer funktioniert
+                    var f by remember { mutableStateOf(false) }
+                    Box(
+                        Modifier.padding(start = CARD_MARGIN).focusRequester(first)
+                            .focusProperties { this.up = up; if (down != null) this.down = down; tabReq[tab]?.let { left = it } }
+                            .onFocusChanged { f = it.isFocused }
+                            .clickable(remember { MutableInteractionSource() }, null) { }
+                            .then(if (f) Modifier.glass(RoundedCornerShape(12.dp), focused = true) else Modifier)
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        Text(
+                            when { loading -> "Lädt …"; tab == "list" -> "Deine Watchlist ist leer"; else -> "Nichts Neues gefunden" },
+                            color = Muted, fontSize = 13.sp
+                        )
+                    }
+                } else cards.forEachIndexed { i, c ->
+                    key(c.key) {
+                        WatchCard(
+                            c,
+                            (if (i == 0) Modifier.focusRequester(first) else Modifier).focusProperties {
+                                this.up = up
+                                if (down != null) this.down = down
+                                if (i == 0) tabReq[tab]?.let { left = it }
+                            },
+                            onFocus = { onFocus(c) },
+                            onClick = { onClick(c) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabRail(
+    tabs: List<Discover.Tab>, tab: String, req: Map<String, FocusRequester>, onTab: (String) -> Unit,
+    right: FocusRequester, up: FocusRequester, down: FocusRequester?
+) {
+    Column(
+        Modifier
+            .padding(start = CARD_MARGIN - 6.dp, end = 6.dp)
+            .width(178.dp)
+            .fillMaxHeight()
+            .glass(RoundedCornerShape(14.dp), strength = 0.8f)
+            .padding(vertical = 6.dp, horizontal = 6.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        tabs.forEachIndexed { i, t ->
+            var f by remember { mutableStateOf(false) }
+            val sel = t.id == tab
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 1.dp)
+                    .then(req[t.id]?.let { Modifier.focusRequester(it) } ?: Modifier)
+                    .focusProperties {
+                        this.right = right
+                        if (i == 0) this.up = up
+                        if (i == tabs.lastIndex && down != null) this.down = down
+                    }
+                    .onFocusChanged { st -> f = st.isFocused; if (st.isFocused) { Sounds.nav(); if (!sel) onTab(t.id) } }
+                    .clickable(remember { MutableInteractionSource() }, null) { right.let { r -> try { r.requestFocus() } catch (_: Exception) { } } }
+                    .background(if (f) White else Color.Transparent, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(5.dp).background(if (sel) (if (f) Color.Black else Accent) else Color.Transparent, CircleShape))
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    t.label, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (f) Color.Black else if (sel) White else White.copy(alpha = 0.7f),
+                    fontWeight = if (sel || f) FontWeight.SemiBold else FontWeight.Medium
                 )
             }
         }
@@ -875,11 +1017,11 @@ private fun WatchlistRow(
 }
 
 @Composable
-private fun WatchCard(it: Watchlist.Item, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
+private fun WatchCard(it: RowCard, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     val s by animateFloatAsState(if (f) 1.10f else 1f, Smooth, label = "wc")
     val shape = RoundedCornerShape(12.dp)
-    val bg = rememberTmdbImage(it.backdrop ?: it.poster, "w780")
+    val bg = rememberTmdbImage(it.image, "w780")
     val logo = rememberTmdbImage(it.logo, "w300")
     // Fokus-Ziel mit Rand: beim Scrollen bleibt die vergroesserte Karte komplett sichtbar
     Box(
@@ -897,13 +1039,17 @@ private fun WatchCard(it: Watchlist.Item, modifier: Modifier, onFocus: () -> Uni
                 .background(Color(0xFF1C1C22))
         ) {
             if (bg != null) Image(bg, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)))))
+            if (it.rank != null) Text(
+                "${it.rank}", color = White, fontSize = 30.sp, fontWeight = FontWeight.Black, letterSpacing = (-1).sp,
+                modifier = Modifier.align(Alignment.TopStart).padding(start = 9.dp, top = 2.dp)
+            )
             Column(Modifier.align(Alignment.BottomStart).padding(start = 10.dp, end = 10.dp, bottom = 9.dp)) {
                 if (logo != null) Image(logo, it.title, contentScale = ContentScale.Fit, alignment = Alignment.BottomStart, modifier = Modifier.height(20.dp).width(100.dp))
                 else Text(it.title, color = White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(it.subtitle, color = White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 3.dp))
+                Text(it.subtitle, color = White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
             }
-            if (it.total > 0) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(White.copy(alpha = 0.18f))) {
+            if (it.progress != null) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(White.copy(alpha = 0.18f))) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(it.progress).background(White))
             }
             Box(Modifier.fillMaxSize().border(if (f) 2.dp else 1.dp, if (f) White else White.copy(alpha = 0.15f), shape))
@@ -996,6 +1142,72 @@ private fun DetailButton(label: String, primary: Boolean, modifier: Modifier, on
                 .padding(horizontal = 22.dp, vertical = 11.dp)
         ) {
             Text(label, color = if (f) Color.Black else White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun PickDetail(
+    pick: Discover.Pick,
+    installed: (String) -> Boolean,
+    onOpenApp: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val d by produceState<org.json.JSONObject?>(null, pick.key) { value = Discover.details(ctx, pick.type, pick.id) }
+    val det = d
+    val bg = rememberTmdbImage(pick.backdrop ?: pick.poster, "w1280")
+    val logo = rememberTmdbImage(det?.let { Discover.pickLogo(it) }, "w500")
+    val providers = det?.let { Discover.providersDE(it) } ?: emptyList()
+    val apps = Watchlist.PROVIDER_APPS
+        .filter { (n, pkg) -> providers.any { p -> p.equals(n, true) } && installed(pkg) }
+        .distinctBy { it.second }
+    val onList = pick.key in Watchlist.allKeys.value
+    val first = remember { FocusRequester() }
+    var busy by remember { mutableStateOf(false) }
+    var msg by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(pick.key) { delay(80); try { first.requestFocus() } catch (_: Exception) { } }
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        if (bg != null) Image(bg, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.92f), Color.Black.copy(alpha = 0.55f), Color.Transparent))))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)))))
+        Column(Modifier.align(Alignment.CenterStart).padding(start = 70.dp, end = 70.dp).width(500.dp)) {
+            Text((pick.reason ?: "ENTDECKEN").uppercase(), color = Accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(10.dp))
+            if (logo != null) Image(logo, pick.title, contentScale = ContentScale.Fit, alignment = Alignment.CenterStart, modifier = Modifier.height(54.dp).width(260.dp))
+            else Text(pick.title, color = White, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp)
+            Spacer(Modifier.height(10.dp))
+            val info = buildList {
+                add(pick.info)
+                det?.let { Discover.genres(it).take(2) }?.takeIf { it.isNotEmpty() }?.let { add(it.joinToString(", ")) }
+                det?.optInt("number_of_seasons")?.takeIf { it > 0 }?.let { add(if (it == 1) "1 Staffel" else "$it Staffeln") }
+                det?.optInt("runtime")?.takeIf { it > 0 }?.let { add("${it / 60} Std. ${it % 60} Min.") }
+            }.joinToString("  ·  ")
+            Text(info, color = Muted, fontSize = 13.sp)
+            val ov = det?.optString("overview")?.takeIf { it.isNotBlank() } ?: pick.overview
+            if (ov.isNotBlank()) Text(ov, color = White.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 19.sp, maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
+            if (providers.isNotEmpty()) Text("Bei " + providers.take(3).joinToString(", "), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+            Spacer(Modifier.height(22.dp))
+            var firstUsed = false
+            fun fm(): Modifier = if (!firstUsed) { firstUsed = true; Modifier.focusRequester(first) } else Modifier
+            DetailButton(
+                when { onList -> "✓  Auf deiner Watchlist"; busy -> "Speichere …"; det == null -> "Lädt …"; else -> "+  Zur Watchlist hinzufügen" },
+                primary = true, modifier = fm()
+            ) {
+                if (onList || busy || det == null) return@DetailButton
+                busy = true
+                scope.launch {
+                    val ok = Watchlist.addPlanned(ctx, pick.type, det)
+                    busy = false
+                    msg = if (ok) "Als „Geplant“ hinzugefügt" else "Konnte nicht speichern"
+                    if (ok) Sounds.select()
+                }
+            }
+            apps.forEach { (name, pkg) -> DetailButton("▶  In $name öffnen", primary = false, modifier = fm()) { onOpenApp(pkg) } }
+            DetailButton("Zurück", primary = false, modifier = fm()) { onClose() }
+            if (msg != null) Text(msg!!, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
         }
     }
 }

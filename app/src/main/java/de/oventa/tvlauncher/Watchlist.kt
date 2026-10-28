@@ -45,6 +45,12 @@ object Watchlist {
     }
 
     val items = mutableStateOf<List<Item>>(emptyList())
+    /** Alle Titel der Liste (auch Fertig/Abgebrochen), fuer "nur Neues" in den Entdecken-Reitern. */
+    val allKeys = mutableStateOf<Set<String>>(emptySet())
+    /** Fuer Empfehlungen: (Typ, ID, Titel, Gewicht) wie in der Web-App */
+    @Volatile var seeds: List<Seed> = emptyList()
+    @Volatile private var maxPlanned = 0.0
+    data class Seed(val type: String, val id: Int, val title: String, val weight: Double, val updated: String)
     val connected = mutableStateOf(false)
     val email = mutableStateOf("")
     @Volatile private var lastLoad = 0L
@@ -65,7 +71,8 @@ object Watchlist {
 
     fun logout(c: Context) {
         sp(c).edit().clear().apply()
-        access = null; userId = null
+        access = null; userId = null; tmdbKeyCache = null; allKeys.value = emptySet(); seeds = emptyList()
+        Discover.clear()
         connected.value = false; items.value = emptyList()
         File(c.cacheDir, "watchlist.json").delete()
     }
@@ -109,11 +116,12 @@ object Watchlist {
             withContext(Dispatchers.IO) {
                 try {
                     if (!ensureToken(c)) return@withContext
-                    val (code, txt) = http("GET", "$URL_BASE/rest/v1/items?select=*&status=in.(watching,planned)", null)
+                    val (code, txt) = http("GET", "$URL_BASE/rest/v1/items?select=*", null)
                     if (code !in 200..299) return@withContext
                     File(c.cacheDir, "watchlist.json").writeText(txt)
-                    val list = parse(JSONArray(txt))
-                    withContext(Dispatchers.Main) { items.value = list }
+                    val arr = JSONArray(txt)
+                    val list = parse(arr)
+                    withContext(Dispatchers.Main) { items.value = list; allKeys.value = keysOf(arr) }
                     lastLoad = System.currentTimeMillis()
                 } catch (_: Exception) { }
             }
@@ -121,7 +129,28 @@ object Watchlist {
     }
 
     private fun loadCache(c: Context) {
-        try { items.value = parse(JSONArray(File(c.cacheDir, "watchlist.json").readText())) } catch (_: Exception) { }
+        try {
+            val arr = JSONArray(File(c.cacheDir, "watchlist.json").readText())
+            items.value = parse(arr); allKeys.value = keysOf(arr)
+        } catch (_: Exception) { }
+    }
+
+    private fun keysOf(a: JSONArray): Set<String> {
+        val base = mapOf("done" to 0.8, "watching" to 1.0, "planned" to 0.5, "dropped" to -0.7)
+        val sd = ArrayList<Seed>(); var mp = 0.0
+        val keys = HashSet<String>()
+        for (i in 0 until a.length()) {
+            val o = a.getJSONObject(i)
+            val t = o.optString("media_type"); val id = o.optInt("tmdb_id"); val st = o.optString("status")
+            keys += "$t:$id"
+            if (st == "planned") mp = maxOf(mp, o.optDouble("position", 0.0))
+            val r = if (o.isNull("rating")) 0 else o.optInt("rating", 0)
+            val w = if (r > 0) (r - 5) / 2.5 else base[st] ?: 0.4
+            if (w != 0.0) sd += Seed(t, id, o.optString("title"), w, o.optString("updated_at"))
+        }
+        seeds = sd.sortedWith(compareByDescending<Seed> { kotlin.math.abs(it.weight) }.thenByDescending { it.updated }).take(16)
+        maxPlanned = mp
+        return keys
     }
 
     /** Am Gucken zuerst, dann die Warteschlange, jeweils in der eigenen Reihenfolge. */
@@ -129,6 +158,7 @@ object Watchlist {
         val out = ArrayList<Item>()
         for (i in 0 until a.length()) {
             val o = a.getJSONObject(i)
+            if (o.optString("status") !in setOf("watching", "planned")) continue
             val meta = o.optJSONObject("meta") ?: JSONObject()
             val (next, done, total) = stats(meta, o.optJSONObject("progress") ?: JSONObject())
             val prov = meta.optJSONArray("prov")
@@ -193,6 +223,40 @@ object Watchlist {
                 if (code in 200..299) { lastLoad = 0; refresh(c, force = true); true } else false
             } catch (_: Exception) { false }
         }
+    }
+
+    // ---------- TMDB-Schluessel aus dem Konto (Tabelle settings) ----------
+    @Volatile private var tmdbKeyCache: String? = null
+
+    fun tmdbKey(c: Context): String? {
+        tmdbKeyCache?.let { return it }
+        sp(c).getString("tmdb", null)?.let { tmdbKeyCache = it; return it }
+        if (!ensureToken(c)) return null
+        val (code, txt) = http("GET", "$URL_BASE/rest/v1/settings?select=tmdb_key", null)
+        if (code !in 200..299) return null
+        val k = try { JSONArray(txt).optJSONObject(0)?.optString("tmdb_key")?.takeIf { it.isNotBlank() && it != "null" } } catch (_: Exception) { null }
+        if (k != null) { tmdbKeyCache = k; sp(c).edit().putString("tmdb", k).apply() }
+        return k
+    }
+
+    /** Neuen Titel als "Geplant" ans Ende der Warteschlange setzen (Zeile wie itemFromDetails() der Web-App). */
+    suspend fun addPlanned(c: Context, type: String, d: JSONObject): Boolean = withContext(Dispatchers.IO) {
+        try {
+            if (!ensureToken(c)) return@withContext false
+            val now = Instant.now().toString()
+            val row = JSONObject()
+                .put("user_id", userId).put("media_type", type).put("tmdb_id", d.getInt("id"))
+                .put("title", Discover.nameOf(d))
+                .put("poster_path", d.optString("poster_path").takeIf { it.isNotBlank() && it != "null" } ?: JSONObject.NULL)
+                .put("backdrop_path", d.optString("backdrop_path").takeIf { it.isNotBlank() && it != "null" } ?: JSONObject.NULL)
+                .put("logo_path", Discover.pickLogo(d) ?: JSONObject.NULL)
+                .put("status", "planned").put("position", maxPlanned + 1)
+                .put("rating", JSONObject.NULL).put("note", JSONObject.NULL)
+                .put("progress", JSONObject()).put("meta", Discover.metaOf(type, d))
+                .put("added_at", now).put("updated_at", now)
+            val (code, _) = http("UPSERT", "$URL_BASE/rest/v1/items?on_conflict=user_id,media_type,tmdb_id", JSONArray().put(row).toString())
+            if (code in 200..299) { lastLoad = 0; refresh(c, force = true); true } else false
+        } catch (_: Exception) { false }
     }
 
     private fun http(method: String, url: String, body: String?, auth: Boolean = true): Pair<Int, String> {
