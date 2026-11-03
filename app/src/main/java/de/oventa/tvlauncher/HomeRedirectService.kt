@@ -70,6 +70,10 @@ class HomeRedirectService : AccessibilityService() {
      */
     override fun onKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
+        if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            handleVolume(event)
+            return false   // Taste immer unveraendert weitergeben
+        }
         if (LauncherMemory.learningKey.value) {
             if (code == KeyEvent.KEYCODE_BACK) {
                 if (event.action == KeyEvent.ACTION_UP) handler.post { LauncherMemory.learningKey.value = false }
@@ -94,6 +98,42 @@ class HomeRedirectService : AccessibilityService() {
         }
         return true
     }
+
+    // --- Lautstaerke gedrueckt halten ---
+    // Mit aktivem Tastenfilter kommen auf Fire OS beim Halten keine Wiederholungen mehr an.
+    // Dann wiederholen wir selbst. Liefert das System doch Wiederholungen, bleibt es dabei.
+    private var volDir = 0
+    private var systemRepeats = false
+
+    private fun handleVolume(e: KeyEvent) {
+        when (e.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (e.repeatCount > 0) {
+                    // System wiederholt selbst: eigene Wiederholung dauerhaft aus
+                    systemRepeats = true; stopVolume(); return
+                }
+                if (systemRepeats) return
+                stopVolume()
+                volDir = if (e.keyCode == KeyEvent.KEYCODE_VOLUME_UP) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER
+                handler.postDelayed(volRepeat, VOL_DELAY_MS)
+            }
+            KeyEvent.ACTION_UP -> stopVolume()
+        }
+    }
+
+    private val volRepeat: Runnable = object : Runnable {
+        override fun run() {
+            if (volDir == 0) return
+            try {
+                (getSystemService(AUDIO_SERVICE) as android.media.AudioManager).adjustSuggestedStreamVolume(
+                    volDir, android.media.AudioManager.USE_DEFAULT_STREAM_TYPE, android.media.AudioManager.FLAG_SHOW_UI
+                )
+            } catch (_: Exception) { }
+            handler.postDelayed(this, VOL_STEP_MS)
+        }
+    }
+
+    private fun stopVolume() { volDir = 0; handler.removeCallbacks(volRepeat) }
 
     // --- Zurueck lang druecken = Startbildschirm ---
     private var backDownAt = 0L
@@ -239,6 +279,8 @@ class HomeRedirectService : AccessibilityService() {
     companion object {
         const val AMAZON_LAUNCHER = "com.amazon.tv.launcher"
         private const val LONG_BACK_MS = 600L
+        private const val VOL_DELAY_MS = 500L
+        private const val VOL_STEP_MS = 110L
         private val NAV_CODES = setOf(
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_HOME
