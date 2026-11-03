@@ -39,7 +39,10 @@ object Discover {
     }
 
     /** Reihenfolge der Reiter. "list" = eigene Watchlist. */
-    fun tabs(): List<Tab> = listOfNotNull(
+    fun tabs(): List<Tab> = if (!Watchlist.connected.value) listOfNotNull(
+        if (StreamTV.items.value.isNotEmpty()) Tab("stv", "Weiterschauen in StreamTV") else null
+    ) else listOfNotNull(
+        if (StreamTV.items.value.isNotEmpty()) Tab("stv", "Weiterschauen in StreamTV") else null,
         Tab("list", "Deine Watchlist"),
         Tab("top", "Top 10 diese Woche"),
         Tab("tvrecs", "Serien für dich"),
@@ -65,7 +68,7 @@ object Discover {
 
     /** Laedt einen Reiter, falls noetig (gecacht, Empfehlungen neu bei geaenderter Liste). */
     suspend fun ensure(c: Context, tab: String) {
-        if (tab == "list") return
+        if (tab == "list" || tab == "stv") return
         val sig = if (tab in setOf("tvrecs", "movierecs", "because")) seedSig() else ""
         val fresh = lists.value[tab] != null && System.currentTimeMillis() - (loadedAt[tab] ?: 0) < TTL && loadedSig[tab] == sig
         if (fresh || tab in loading.value) return

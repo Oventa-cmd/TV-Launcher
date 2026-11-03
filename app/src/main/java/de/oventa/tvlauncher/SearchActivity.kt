@@ -130,6 +130,7 @@ private fun SearchScreen(act: ComponentActivity) {
                     pick = d,
                     installed = { Apps.isInstalled(act, it) },
                     onOpenApp = { pkg -> Apps.launch(act, pkg); act.finish() },
+                    onStreamTV = if (StreamTV.isInstalled(act)) ({ uri -> if (StreamTV.open(act, uri)) act.finish() }) else null,
                     onClose = { detail = null; Sounds.close() }
                 )
             }

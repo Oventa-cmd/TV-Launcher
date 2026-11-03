@@ -281,7 +281,7 @@ object Watchlist {
 
     suspend fun image(c: Context, path: String?, size: String): ImageBitmap? {
         if (path == null) return null
-        val url = IMG + (if (path.endsWith(".svg")) "original" else size) + path
+        val url = if (path.startsWith("http")) path else IMG + (if (path.endsWith(".svg")) "original" else size) + path
         mem.get(url)?.let { return it }
         return withContext(Dispatchers.IO) {
             try {

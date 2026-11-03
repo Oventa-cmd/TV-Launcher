@@ -24,6 +24,8 @@ object LauncherMemory {
     val menuKey = androidx.compose.runtime.mutableStateOf(0)
     /** Aktiver Reiter der Watchlist-Zeile (geteilt zwischen Overlay und Activity). */
     val wlTab = androidx.compose.runtime.mutableStateOf("list")
+    /** StreamTV-Reiter einmal nach dem Start vorne zeigen. */
+    @Volatile var stvShown = false
 
     fun keyName(code: Int): String = when (code) {
         0 -> "aus"
@@ -154,6 +156,12 @@ class LauncherState(
         try { ctx.startActivity(Intent(ctx, WatchlistLoginActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }
     }
     fun isInstalled(pkg: String) = Apps.isInstalled(ctx, pkg)
+
+    /** StreamTV per Deep Link oeffnen (Folge fortsetzen, Serie abspielen …). */
+    fun openStreamTV(uri: String) {
+        HomeRedirectService.instance?.hideOverlay()
+        if (StreamTV.open(ctx, uri)) onLeave()
+    }
 
     fun setLongBackHome(b: Boolean) { longBackHome.value = b; prefs.longBackHome = b }
     fun cycleScreensaver() {

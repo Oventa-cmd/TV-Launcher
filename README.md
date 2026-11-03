@@ -14,6 +14,8 @@ Schlichter Startbildschirm für Fire TV / Android TV (Kotlin, Jetpack Compose).
 - Standard-Apps: SmartTube, Netflix, Twitch, Jellyfin, ProtonVPN, Kodi (YouTube versteckt, nicht gelöscht)
 - Home-Taste: optionaler Bedienungshilfe-Dienst `HomeRedirectService` öffnet diesen Launcher, sobald die Amazon-Startseite erscheint. Er liest keine Bildschirminhalte.
 
+- **StreamTV-Anbindung:** Reiter „Weiterschauen in StreamTV“ in der Watchlist-Zeile (angefangene Folgen mit Fortschritt, OK = direkt weiterschauen); in den Detailansichten „▶ In StreamTV weiterschauen / abspielen“ (Deep Link `streamtv://…`)
+
 Jeder Push auf `main` baut per GitHub Actions eine APK und veröffentlicht sie als Release.
 
 ## Home-Taste einschalten (selbst am PC ausführen)

@@ -169,13 +169,18 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
     var settingsOpen by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     LaunchedEffect(resumeTick) { Watchlist.init(ctx); Watchlist.refresh(ctx) }
-    val wlShown = state.watchlistOn.value && Watchlist.connected.value
+    LaunchedEffect(resumeTick) {
+        StreamTV.refresh(ctx)
+        // Angefangene Folgen aus StreamTV einmal nach dem Start als ersten Reiter zeigen
+        if (!LauncherMemory.stvShown && StreamTV.items.value.isNotEmpty()) { LauncherMemory.stvShown = true; LauncherMemory.wlTab.value = "stv" }
+    }
+    val wlShown = state.watchlistOn.value && (Watchlist.connected.value || StreamTV.items.value.isNotEmpty())
     val wlFirst = remember { FocusRequester() }
     var wlDetail by remember { mutableStateOf<Any?>(null) }
     var wlRowFocused by remember { mutableStateOf(false) }
     var focusedSub by remember { mutableStateOf("") }
-    val wlTabs = remember(Watchlist.allKeys.value) { Discover.tabs() }
-    val wlTab = LauncherMemory.wlTab.value.takeIf { t -> wlTabs.any { it.id == t } } ?: "list"
+    val wlTabs = remember(Watchlist.allKeys.value, Watchlist.connected.value, StreamTV.items.value.isNotEmpty()) { Discover.tabs() }
+    val wlTab = LauncherMemory.wlTab.value.takeIf { t -> wlTabs.any { it.id == t } } ?: wlTabs.firstOrNull()?.id ?: "list"
     val wlCards = rowCards(wlTab, Watchlist.items.value, Discover.lists.value[wlTab], Watchlist.allKeys.value)
     LaunchedEffect(wlShown, wlTab, Watchlist.allKeys.value) { if (wlShown) Discover.ensure(ctx, wlTab) }
     // Reiter automatisch durchrotieren (pausiert, solange die Zeile den Fokus hat)
@@ -287,7 +292,11 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                     onRowFocus = { wlRowFocused = it },
                     onSearch = { state.openSearch() },
                     onFocus = { c -> focusedLabel = c.title; focusedSub = c.subtitle; wlFocused = true },
-                    onClick = { c -> wlDetail = c.target; Sounds.open() }
+                    onClick = { c ->
+                        val t = c.target
+                        if (t is StreamTV.Cont) { Sounds.open(); state.openStreamTV(t.uri) }   // direkt weiterschauen
+                        else { wlDetail = t; Sounds.open() }
+                    }
                 )
             }
 
@@ -366,12 +375,14 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                     item = Watchlist.items.value.firstOrNull { it.key == d.key } ?: d,
                     installed = { state.isInstalled(it) },
                     onOpenApp = { pkg -> wlDetail = null; state.launch(pkg) },
+                    onStreamTV = if (StreamTV.installed.value) ({ uri -> wlDetail = null; state.openStreamTV(uri) }) else null,
                     onClose = { wlDetail = null; Sounds.close() }
                 )
                 is Discover.Pick -> PickDetail(
                     pick = d,
                     installed = { state.isInstalled(it) },
                     onOpenApp = { pkg -> wlDetail = null; state.launch(pkg) },
+                    onStreamTV = if (StreamTV.installed.value) ({ uri -> wlDetail = null; state.openStreamTV(uri) }) else null,
                     onClose = { wlDetail = null; Sounds.close() }
                 )
             }
@@ -879,7 +890,8 @@ internal data class RowCard(
 )
 
 private fun rowCards(tab: String, items: List<Watchlist.Item>, picks: List<Discover.Pick>?, onList: Set<String>): List<RowCard> =
-    if (tab == "list") items.map { RowCard(it.key, it.title, it.backdrop ?: it.poster, it.logo, it.subtitle, if (it.total > 0) it.progress else null, null, it) }
+    if (tab == "stv") StreamTV.items.value.map { RowCard(it.key, it.show, it.image, null, it.subtitle, it.progress, null, it) }
+    else if (tab == "list") items.map { RowCard(it.key, it.title, it.backdrop ?: it.poster, it.logo, it.subtitle, if (it.total > 0) it.progress else null, null, it) }
     else (picks ?: emptyList()).filter { it.key !in onList }.take(if (tab == "top") 10 else 20).mapIndexed { i, p ->
         RowCard(p.key, p.title, p.backdrop ?: p.poster, null, p.reason ?: p.info, null, if (tab == "top") i + 1 else null, p)
     }
@@ -1081,6 +1093,7 @@ private fun WatchlistDetail(
     item: Watchlist.Item,
     installed: (String) -> Boolean,
     onOpenApp: (String) -> Unit,
+    onStreamTV: ((String) -> Unit)?,
     onClose: () -> Unit
 ) {
     val ctx = LocalContext.current
@@ -1119,8 +1132,14 @@ private fun WatchlistDetail(
             Spacer(Modifier.height(26.dp))
             var firstUsed = false
             fun fm(): Modifier = if (!firstUsed) { firstUsed = true; Modifier.focusRequester(first) } else Modifier
+            if (onStreamTV != null) {
+                val resume = item.type == "tv" && item.status == "watching"
+                DetailButton(if (resume) "▶  In StreamTV weiterschauen" else "▶  In StreamTV abspielen", primary = true, modifier = fm()) {
+                    onStreamTV(StreamTV.titleUri(item.type, item.id, play = true, next = item.next))
+                }
+            }
             apps.forEach { (name, pkg) ->
-                DetailButton("▶  In $name öffnen", primary = true, modifier = fm()) { onOpenApp(pkg) }
+                DetailButton("▶  In $name öffnen", primary = onStreamTV == null, modifier = fm()) { onOpenApp(pkg) }
             }
             if (item.next != null) {
                 DetailButton(
@@ -1170,6 +1189,7 @@ internal fun PickDetail(
     pick: Discover.Pick,
     installed: (String) -> Boolean,
     onOpenApp: (String) -> Unit,
+    onStreamTV: ((String) -> Unit)? = null,
     onClose: () -> Unit
 ) {
     val ctx = LocalContext.current
@@ -1223,6 +1243,10 @@ internal fun PickDetail(
                     msg = if (ok) "Als „Geplant“ hinzugefügt" else "Konnte nicht speichern"
                     if (ok) Sounds.select()
                 }
+            }
+            if (onStreamTV != null) {
+                DetailButton("▶  In StreamTV abspielen", primary = false, modifier = fm()) { onStreamTV(StreamTV.titleUri(pick.type, pick.id, play = true)) }
+                DetailButton("In StreamTV ansehen", primary = false, modifier = fm()) { onStreamTV(StreamTV.titleUri(pick.type, pick.id, play = false)) }
             }
             apps.forEach { (name, pkg) -> DetailButton("▶  In $name öffnen", primary = false, modifier = fm()) { onOpenApp(pkg) } }
             DetailButton("Zurück", primary = false, modifier = fm()) { onClose() }
