@@ -70,7 +70,7 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("longBackHome", true)
         set(v) { sp.edit().putBoolean("longBackHome", v).apply() }
 
-    /** Bis zu diesem Zeitpunkt leitet der Home-Dienst nicht um (um die Amazon-Startseite bewusst zu öffnen). */
+    /** Bis zu diesem Zeitpunkt leitet der Home-Dienst nicht um (um die Original-Startseite bewusst zu öffnen). */
     var bypassUntil: Long
         get() = sp.getLong("bypassUntil", 0L)
         set(v) { sp.edit().putLong("bypassUntil", v).apply() }

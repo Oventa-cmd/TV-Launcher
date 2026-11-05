@@ -307,6 +307,11 @@ object Watchlist {
         "RTL+" to "de.cbc.vp2gen.rtlplus",
         "WOW" to "de.sky.online",
         "Apple TV Plus" to "com.apple.atve.amazon.appletv",
+        // Google TV / Android TV (z. B. TCL): andere Paketnamen
+        "Amazon Prime Video" to "com.amazon.amazonvideo.livingroom",
+        "Prime Video" to "com.amazon.amazonvideo.livingroom",
+        "Apple TV Plus" to "com.apple.atve.androidtv.appletv",
+        "Apple TV" to "com.apple.atve.androidtv.appletv",
         "Paramount Plus" to "com.cbs.ca",
     )
 }

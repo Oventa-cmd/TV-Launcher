@@ -182,7 +182,7 @@ class LauncherState(
         } catch (_: Exception) { }
     }
 
-    fun openFireSettings() {
+    fun openSystemSettings() {
         prefs.bypassUntil = System.currentTimeMillis() + 2 * 60 * 1000
         try {
             ctx.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -190,11 +190,22 @@ class LauncherState(
         onLeave()
     }
 
-    fun openAmazonHome() {
+    /** Original-Startseite des Geraets (Fire TV oder Google TV) bewusst oeffnen. */
+    fun openStockHome() {
         prefs.bypassUntil = System.currentTimeMillis() + 2 * 60 * 1000
-        val i = ctx.packageManager.getLaunchIntentForPackage(HomeRedirectService.AMAZON_LAUNCHER)
-            ?: Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(HomeRedirectService.AMAZON_LAUNCHER)
+        val pm = ctx.packageManager
+        val i = HomeRedirectService.STOCK_LAUNCHERS.firstNotNullOfOrNull { pkg ->
+            pm.getLaunchIntentForPackage(pkg)
+                ?: Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(pkg)
+                    .takeIf { pm.resolveActivity(it, 0) != null }
+        } ?: return
         try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }
         onLeave()
     }
+
+    /** Name der Original-Startseite fuer die Einstellungen. */
+    val stockHomeLabel: String get() =
+        if (isFireTv) "Amazon-Startseite öffnen" else "Google-TV-Startseite öffnen"
+
+    val isFireTv: Boolean get() = ctx.packageManager.hasSystemFeature("amazon.hardware.fire_tv")
 }

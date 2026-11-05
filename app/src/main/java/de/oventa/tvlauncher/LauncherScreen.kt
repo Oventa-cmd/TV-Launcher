@@ -781,8 +781,8 @@ private fun SettingsPanel(
         Section("System")
         ToggleRow("Temperatur Aachen", activity.weather.value, { activity.setWeather(!activity.weather.value) }, null)
         ToggleRow("Eingänge (HDMI) anzeigen", showInputs, { activity.setShowInputs(!showInputs) }, null)
-        ActionRow("Fire TV Einstellungen", null) { activity.openFireSettings() }
-        ActionRow("Amazon-Startseite öffnen", null) { activity.openAmazonHome() }
+        ActionRow(if (activity.isFireTv) "Fire TV Einstellungen" else "TV-Einstellungen", null) { activity.openSystemSettings() }
+        ActionRow(activity.stockHomeLabel, null) { activity.openStockHome() }
         }
     }
 }

@@ -1,6 +1,6 @@
 # TV-Launcher
 
-Schlichter Startbildschirm für Fire TV / Android TV (Kotlin, Jetpack Compose).
+Schlichter Startbildschirm für Fire TV / Google TV / Android TV (Kotlin, Jetpack Compose).
 
 - Große App-Kacheln mit weicher Fokus-Animation, Uhr, Hintergründe
 - Begrüßung nach Tageszeit („Guten Abend, Arne – Was möchtest du schauen?“) mit Lichtschimmer
@@ -12,7 +12,7 @@ Schlichter Startbildschirm für Fire TV / Android TV (Kotlin, Jetpack Compose).
 - Hauptmenü-Taste: Guide öffnet den Startbildschirm; andere Taste unter Einstellungen → Fernbedienung anlernbar (braucht den Home-Dienst)
 - Einstellungen über die **Menü-Taste** (≡) oder das Zahnrad: Hintergrund, Apps ein/aus, Reihenfolge (◀ ▶), Eingänge
 - Standard-Apps: SmartTube, Netflix, Twitch, Jellyfin, ProtonVPN, Kodi (YouTube versteckt, nicht gelöscht)
-- Home-Taste: optionaler Bedienungshilfe-Dienst `HomeRedirectService` öffnet diesen Launcher, sobald die Amazon-Startseite erscheint. Er liest keine Bildschirminhalte.
+- Home-Taste: optionaler Bedienungshilfe-Dienst `HomeRedirectService` öffnet diesen Launcher, sobald die Original-Startseite erscheint (Fire TV: Amazon, Google TV: `launcherx`). Er liest keine Bildschirminhalte.
 
 - **StreamTV-Anbindung:** Reiter „Weiterschauen in StreamTV“ in der Watchlist-Zeile (angefangene Folgen mit Fortschritt, OK = direkt weiterschauen); in den Detailansichten „▶ In StreamTV weiterschauen / abspielen“ (Deep Link `streamtv://…`)
 

@@ -20,7 +20,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
 /**
- * Home-Taste -> dieser Launcher.
+ * Home-Taste -> dieser Launcher (Fire TV und Google TV).
  *
  * Fire OS haelt nach einem Home-Druck App-Starts fuer einige Sekunden zurueck.
  * Deshalb zeigt der Dienst den Startbildschirm sofort als Bedienungshilfe-Overlay
@@ -55,7 +55,7 @@ class HomeRedirectService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         if (pkg != "com.android.systemui") foreground = pkg
         if (pkg == packageName) return
-        if (pkg != AMAZON_LAUNCHER) {
+        if (pkg !in STOCK_LAUNCHERS) {
             // Eine andere App ist vorne (z. B. aus dem Overlay gestartet): Overlay weg
             if (pkg != "com.android.systemui") hideOverlay()
             return
@@ -277,7 +277,13 @@ class HomeRedirectService : AccessibilityService() {
     }
 
     companion object {
-        const val AMAZON_LAUNCHER = "com.amazon.tv.launcher"
+        /** Original-Startseiten: Fire TV, Google TV (z. B. TCL), klassisches Android TV. */
+        val STOCK_LAUNCHERS = listOf(
+            "com.amazon.tv.launcher",
+            "com.google.android.apps.tv.launcherx",
+            "com.google.android.tvlauncher",
+            "com.google.android.leanbacklauncher"
+        )
         private const val LONG_BACK_MS = 600L
         private const val VOL_DELAY_MS = 500L
         private const val VOL_STEP_MS = 110L
