@@ -31,3 +31,10 @@ Rückgängig:
 adb shell settings delete secure enabled_accessibility_services
 adb shell settings put secure accessibility_enabled 0
 ```
+
+## Google TV: Original-Startseite abschalten
+
+Auf Google TV (z. B. TCL) schaltet der Launcher beim ersten Start die Google-TV-Startseite ab (`launcherx` + `setupwraith`), damit Home immer diesen Launcher öffnet. Dafür verbindet er sich per ADB mit dem eigenen Gerät (127.0.0.1:5555). Voraussetzungen: USB-Debugging ist an, und die Abfrage am TV wurde einmal mit „Immer zulassen“ bestätigt.
+
+Umschalten: Einstellungen → System → „Google-TV-Startseite erreichbar“.
+Notfall vom PC: `adb shell pm enable com.google.android.apps.tv.launcherx` und `adb shell pm enable com.google.android.tungsten.setupwraith`.

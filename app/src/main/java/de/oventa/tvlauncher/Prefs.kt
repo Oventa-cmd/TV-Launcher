@@ -74,4 +74,9 @@ class Prefs(context: Context) {
     var bypassUntil: Long
         get() = sp.getLong("bypassUntil", 0L)
         set(v) { sp.edit().putLong("bypassUntil", v).apply() }
+
+    /** Google-TV-Startseite wurde beim ersten Start schon einmal automatisch abgeschaltet. */
+    var stockAutoDone: Boolean
+        get() = sp.getBoolean("stockAutoDone", false)
+        set(v) { sp.edit().putBoolean("stockAutoDone", v).apply() }
 }

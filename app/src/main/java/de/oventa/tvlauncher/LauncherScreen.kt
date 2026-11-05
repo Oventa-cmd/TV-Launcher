@@ -782,7 +782,16 @@ private fun SettingsPanel(
         ToggleRow("Temperatur Aachen", activity.weather.value, { activity.setWeather(!activity.weather.value) }, null)
         ToggleRow("Eingänge (HDMI) anzeigen", showInputs, { activity.setShowInputs(!showInputs) }, null)
         ActionRow(if (activity.isFireTv) "Fire TV Einstellungen" else "TV-Einstellungen", null) { activity.openSystemSettings() }
-        ActionRow(activity.stockHomeLabel, null) { activity.openStockHome() }
+        if (activity.isGoogleTv) {
+            ToggleRow(if (activity.stockBusy.value) "Google-TV-Startseite …" else "Google-TV-Startseite erreichbar", activity.stockOn.value, { activity.toggleStockHome() }, null)
+            Text(
+                activity.stockMsg.value ?: if (activity.stockOn.value) "Aus = Home-Taste öffnet immer diesen Launcher." else "Abgeschaltet – Home öffnet immer diesen Launcher.",
+                color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+            if (activity.stockOn.value) ActionRow(activity.stockHomeLabel, null) { activity.openStockHome() }
+        } else {
+            ActionRow(activity.stockHomeLabel, null) { activity.openStockHome() }
+        }
         }
     }
 }

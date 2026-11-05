@@ -78,6 +78,59 @@ class LauncherState(
 
     init { Sounds.enabled = prefs.sounds; LauncherMemory.menuKey.value = prefs.menuKey }
 
+    // --- Google-TV-Startseite ab-/einschalten (ueber lokales ADB) ---
+    /** Pakete der Google-TV-Startseite, die zusammen ab-/eingeschaltet werden. */
+    private val googleHomePkgs = listOf(
+        "com.google.android.apps.tv.launcherx",
+        "com.google.android.tungsten.setupwraith",
+        "com.google.android.tvlauncher"
+    )
+    private fun installed(pkg: String) =
+        try { ctx.packageManager.getApplicationInfo(pkg, android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS); true } catch (_: Exception) { false }
+    /** Google TV: launcherx + Einrichtungs-Assistent (der sonst die Home-Taste uebernimmt); klassisches Android TV: tvlauncher. */
+    private fun installedGoogleHome(): List<String> =
+        if (installed(googleHomePkgs[0])) googleHomePkgs.take(2).filter { installed(it) }
+        else googleHomePkgs.drop(2).filter { installed(it) }
+    /** Google TV / Android TV mit Google-Startseite (nicht Fire TV). */
+    val isGoogleTv: Boolean get() = !isFireTv && installedGoogleHome().any { it != "com.google.android.tungsten.setupwraith" }
+    private fun googleHomeEnabled(): Boolean = installedGoogleHome()
+        .filter { it != "com.google.android.tungsten.setupwraith" }
+        .any { pkg -> try { ctx.packageManager.getApplicationInfo(pkg, android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS).enabled } catch (_: Exception) { false } }
+    val stockOn = mutableStateOf(true)
+    val stockBusy = mutableStateOf(false)
+    val stockMsg = mutableStateOf<String?>(null)
+
+    fun refreshStock() { if (isGoogleTv) stockOn.value = googleHomeEnabled() }
+
+    /** Erster Start auf Google TV: Original-Startseite einmalig automatisch abschalten. */
+    fun autoDisableStockOnce() {
+        if (prefs.stockAutoDone || !isGoogleTv) return
+        prefs.stockAutoDone = true
+        if (googleHomeEnabled()) setStockHome(false)
+    }
+
+    fun toggleStockHome() { if (!stockBusy.value) setStockHome(!stockOn.value) }
+
+    fun setStockHome(enable: Boolean) {
+        val pkgs = installedGoogleHome()
+        if (pkgs.isEmpty()) return
+        stockBusy.value = true
+        stockMsg.value = if (enable) "Wird eingeschaltet …" else "Wird abgeschaltet … (ggf. am TV „Immer zulassen“ bestätigen)"
+        val cmd = pkgs.joinToString("; ") { if (enable) "pm enable $it" else "pm disable-user --user 0 $it" }
+        Thread {
+            val r = AdbLocal.shell(ctx, cmd)
+            main.post {
+                stockBusy.value = false
+                refreshStock()
+                stockMsg.value = when {
+                    !r.ok -> "Nicht möglich: ${r.output}"
+                    stockOn.value == enable -> if (enable) "Google-TV-Startseite ist wieder erreichbar." else "Home öffnet jetzt immer diesen Launcher."
+                    else -> "Nicht möglich: ${r.output.take(120)}"
+                }
+            }
+        }.start()
+    }
+
     fun startLearningKey() { LauncherMemory.learningKey.value = true }
     fun disableMenuKey() { prefs.menuKey = 0; LauncherMemory.menuKey.value = 0; LauncherMemory.learningKey.value = false }
     val serviceActive: Boolean get() = HomeRedirectService.instance != null
@@ -108,6 +161,7 @@ class LauncherState(
     fun setAnimations(b: Boolean) { animations.value = b; prefs.animations = b }
 
     fun reload() {
+        refreshStock()
         Thread {
             val a = Apps.load(ctx)
             val i = Apps.inputs(ctx)

@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
         Sounds.init(this)
         state = LauncherState(this, onReady = { HomeRedirectService.instance?.hideOverlay() })
         state.reload()
+        state.autoDisableStockOnce()
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
