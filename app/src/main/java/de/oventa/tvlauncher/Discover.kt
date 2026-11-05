@@ -176,17 +176,18 @@ object Discover {
     }
 
     /** Claude-Treffer in TMDB-Titel aufloesen (Typ und Jahr passend bevorzugt). */
-    suspend fun resolve(c: Context, hits: List<Watchlist.SmartHit>): List<Pick> = kotlinx.coroutines.coroutineScope {
-        hits.take(12).map { h ->
-            kotlinx.coroutines.async(Dispatchers.IO) {
+    suspend fun resolve(c: Context, hits: List<Watchlist.SmartHit>): List<Pick> = coroutineScope {
+        hits.take(12).map { h: Watchlist.SmartHit ->
+            async(Dispatchers.IO) {
                 try {
-                    val key = Watchlist.tmdbKey(c) ?: return@async null
+                    val key = Watchlist.tmdbKey(c) ?: return@async null as Pick?
                     val l = picks(get(key, "/search/${h.type}", mapOf("query" to h.title, "include_adult" to "false")), h.type)
                         .filter { it.backdrop != null || it.poster != null }
-                    (h.year?.let { y -> l.firstOrNull { it.year.startsWith(y.toString()) } } ?: l.firstOrNull())
+                    val p: Pick? = h.year?.let { y -> l.firstOrNull { it.year.startsWith(y.toString()) } } ?: l.firstOrNull()
+                    p
                 } catch (_: Exception) { null }
             }
-        }.map { it.await() }.filterNotNull().distinctBy { it.key }
+        }.awaitAll().filterNotNull().distinctBy { it.key }
     }
 
     // ---------- Details (fuer Detailansicht + Hinzufuegen) ----------
