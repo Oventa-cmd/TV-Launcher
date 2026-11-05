@@ -259,10 +259,33 @@ object Watchlist {
         } catch (_: Exception) { false }
     }
 
-    private fun http(method: String, url: String, body: String?, auth: Boolean = true): Pair<Int, String> {
+    /** Ergebnis der Claude-Suche: kurzer Satz + Titel (Original/deutsch, Jahr, tv|movie). */
+    data class SmartHit(val title: String, val titleDe: String, val year: Int?, val type: String)
+    data class SmartResult(val answer: String, val items: List<SmartHit>, val error: String? = null)
+
+    /** Freie Anfrage (getippt oder gesprochen) ueber die Supabase-Funktion smart-search an Claude. */
+    suspend fun smartSearch(c: Context, q: String): SmartResult = withContext(Dispatchers.IO) {
+        try {
+            if (!connected.value) return@withContext SmartResult("", emptyList(), "Claude-Suche braucht das Watchlist-Konto")
+            if (!ensureToken(c)) return@withContext SmartResult("", emptyList(), "Watchlist: bitte neu anmelden")
+            val ctx = items.value.take(25).joinToString(", ") { it.title }
+            val body = JSONObject().put("q", q).put("context", if (ctx.isBlank()) "" else "Watchlist: $ctx").toString()
+            val (code, txt) = http("POST", "$URL_BASE/functions/v1/smart-search", body, readMs = 40000)
+            val j = try { JSONObject(txt) } catch (_: Exception) { JSONObject() }
+            if (code !in 200..299) return@withContext SmartResult("", emptyList(), j.optString("error").ifBlank { "Fehler $code" })
+            val a = j.optJSONArray("items") ?: JSONArray()
+            val list = (0 until a.length()).map { i ->
+                val o = a.getJSONObject(i)
+                SmartHit(o.optString("title"), o.optString("title_de"), if (o.isNull("year")) null else o.optInt("year"), if (o.optString("type") == "movie") "movie" else "tv")
+            }.filter { it.title.isNotBlank() }
+            SmartResult(j.optString("answer"), list)
+        } catch (e: Exception) { SmartResult("", emptyList(), e.message ?: "Verbindung fehlgeschlagen") }
+    }
+
+    private fun http(method: String, url: String, body: String?, auth: Boolean = true, readMs: Int = 10000): Pair<Int, String> {
         val con = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = if (method == "UPSERT") "POST" else method
-            connectTimeout = 8000; readTimeout = 10000
+            connectTimeout = 8000; readTimeout = readMs
             setRequestProperty("apikey", KEY)
             setRequestProperty("Content-Type", "application/json")
             if (auth && access != null) setRequestProperty("Authorization", "Bearer $access")

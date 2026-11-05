@@ -201,9 +201,9 @@ class LauncherState(
         val n = steps[(steps.indexOf(wlRotate.value) + 1).mod(steps.size)]
         wlRotate.value = n; prefs.wlRotate = n
     }
-    fun openSearch() {
+    fun openSearch(voice: Boolean = false) {
         HomeRedirectService.instance?.hideOverlay()
-        try { ctx.startActivity(Intent(ctx, SearchActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }
+        try { ctx.startActivity(Intent(ctx, SearchActivity::class.java).putExtra("voice", voice).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }
     }
     fun openWatchlistLogin() {
         HomeRedirectService.instance?.hideOverlay()

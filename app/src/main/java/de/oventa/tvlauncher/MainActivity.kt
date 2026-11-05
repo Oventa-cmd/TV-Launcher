@@ -85,4 +85,12 @@ class MainActivity : ComponentActivity() {
         scope.cancel()
         super.onDestroy()
     }
+
+    /** Such-/Mikrofontaste der Fernbedienung (falls das System sie durchreicht): Sprachsuche. */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_SEARCH || keyCode == android.view.KeyEvent.KEYCODE_VOICE_ASSIST) {
+            state.openSearch(voice = true); return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
 }

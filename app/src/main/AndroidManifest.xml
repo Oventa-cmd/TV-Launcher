@@ -19,6 +19,9 @@
         <!-- StreamTV: Weiterschauen lesen und per Deep Link oeffnen -->
         <package android:name="de.oventa.streamtv" />
         <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
         </intent>

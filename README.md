@@ -38,3 +38,8 @@ Auf Google TV (z. B. TCL) schaltet der Launcher beim ersten Start die Google-TV-
 
 Umschalten: Einstellungen → System → „Google-TV-Startseite erreichbar“.
 Notfall vom PC: `adb shell pm enable com.google.android.apps.tv.launcherx` und `adb shell pm enable com.google.android.tungsten.setupwraith`.
+
+## Claude-Suche & Spracheingabe
+
+In der Suche: **🎤 Sprechen** (Spracherkennung des TVs) oder **✨ Mit Claude suchen**. Claude versteht freie Anfragen („was Lustiges mit Zeitreisen“). Die Titel werden über TMDB aufgelöst, die Detailansicht bietet „▶ In StreamTV abspielen“.
+Nutzt die Supabase-Funktion `smart-search` (Quelltext im StreamTV-Repo) mit dem Watchlist-Konto. Der Anthropic-Schlüssel liegt nur als Secret im Supabase-Projekt. Die Such-/Mikrofontaste der Fernbedienung öffnet die Sprachsuche, falls das System sie an den Launcher weitergibt.

@@ -46,6 +46,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.Key
 
 /** Suche nach Serien und Filmen (TMDB). Klassisches EditText, damit die Fire-TV-Tastatur sicher funktioniert. */
 class SearchActivity : ComponentActivity() {
@@ -54,7 +73,8 @@ class SearchActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Sounds.init(this)
         Watchlist.init(this)
-        setContent { SearchScreen(this) }
+        val voice = intent?.getBooleanExtra("voice", false) == true
+        setContent { SearchScreen(this, voice) }
     }
 
     override fun onResume() {
@@ -64,8 +84,15 @@ class SearchActivity : ComponentActivity() {
 }
 
 @androidx.compose.runtime.Composable
-private fun SearchScreen(act: ComponentActivity) {
+private fun SearchScreen(act: ComponentActivity, startVoice: Boolean = false) {
     var query by remember { mutableStateOf("") }
+    // Claude-Suche
+    var aiQuery by remember { mutableStateOf("") }
+    var aiBusy by remember { mutableStateOf(false) }
+    var aiAnswer by remember { mutableStateOf<String?>(null) }
+    var aiResults by remember { mutableStateOf<List<Discover.Pick>?>(null) }
+    val scope = rememberCoroutineScope()
+    val micFocus = remember { FocusRequester() }
     var results by remember { mutableStateOf<List<Discover.Pick>?>(null) }
     var loading by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<Discover.Pick?>(null) }
@@ -75,6 +102,42 @@ private fun SearchScreen(act: ComponentActivity) {
 
     // Ohne Eingabe: Trends als Vorschlaege
     LaunchedEffect(Unit) { Watchlist.refresh(act); Discover.ensure(act, "top") }
+    fun runAi(text: String) {
+        val t = text.trim()
+        if (t.isEmpty()) { aiAnswer = "Erst etwas eintippen oder 🎤 drücken"; return }
+        aiQuery = t; aiBusy = true; aiAnswer = null; aiResults = null
+        scope.launch {
+            val r = Watchlist.smartSearch(act, t)
+            if (aiQuery != t) return@launch
+            if (r.error != null) { aiBusy = false; aiAnswer = "Claude-Suche: ${r.error}"; return@launch }
+            val picks = Discover.resolve(act, r.items)
+            if (aiQuery != t) return@launch
+            aiBusy = false
+            aiAnswer = "✨ " + r.answer.ifBlank { "Vorschläge von Claude" }
+            aiResults = picks
+            delay(120); if (picks.isNotEmpty()) try { firstResult.requestFocus() } catch (_: Exception) { }
+        }
+    }
+    val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val text = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!text.isNullOrBlank()) {
+            aiQuery = text.trim()
+            edit?.setText(text.trim()); edit?.setSelection(edit?.text?.length ?: 0)
+            hideKeyboard(act, edit)
+            runAi(text)
+        }
+    }
+    fun listen() {
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE")
+            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Was möchtest du schauen?")
+        try { voiceLauncher.launch(i) } catch (_: Exception) { aiAnswer = "Keine Spracherkennung auf diesem Gerät gefunden" }
+    }
+    LaunchedEffect(Unit) { if (startVoice) { delay(400); listen() } }
+    LaunchedEffect(query) {
+        if (query.trim() != aiQuery) { aiQuery = ""; aiResults = null; aiBusy = false; aiAnswer = null }
+    }
     LaunchedEffect(query) {
         val q = query.trim()
         if (q.length < 2) { results = null; loading = false; return@LaunchedEffect }
@@ -83,8 +146,11 @@ private fun SearchScreen(act: ComponentActivity) {
         results = Discover.search(act, q)
         loading = false
     }
-    val shown: List<Discover.Pick> = results ?: (Discover.lists.value["top"] ?: emptyList()).take(16)
+    val shown: List<Discover.Pick> = aiResults ?: results ?: (Discover.lists.value["top"] ?: emptyList()).take(16)
     val heading = when {
+        aiBusy -> "✨ Claude denkt nach …"
+        aiAnswer != null && aiResults != null && aiResults!!.isEmpty() -> "${aiAnswer} – keine Titel gefunden"
+        aiAnswer != null -> aiAnswer!!
         query.trim().length < 2 -> "Gerade beliebt"
         loading -> "Suche …"
         results == null -> "Suche nicht möglich – Verbindung prüfen"
@@ -104,9 +170,14 @@ private fun SearchScreen(act: ComponentActivity) {
             AndroidView(
                 modifier = Modifier.padding(top = 14.dp).fillMaxWidth(0.62f).height(52.dp),
                 factory = { ctx -> searchField(ctx, onText = { query = it }, onDown = {
-                    if (shownNow.value.isNotEmpty()) { hideKeyboard(ctx, edit); try { firstResult.requestFocus() } catch (_: Exception) { } }
-                }).also { e -> edit = e; e.requestFocus(); e.postDelayed({ showKeyboard(ctx, e) }, 250) } }
+                    hideKeyboard(ctx, edit); try { micFocus.requestFocus() } catch (_: Exception) { }
+                }).also { e -> edit = e; if (!startVoice) { e.requestFocus(); e.postDelayed({ showKeyboard(ctx, e) }, 250) } } }
             )
+            Row(Modifier.padding(top = 12.dp)) {
+                PillButton("🎤  Sprechen", Modifier.focusRequester(micFocus)) { listen() }
+                Spacer(Modifier.width(10.dp))
+                PillButton("✨  Mit Claude suchen", Modifier) { runAi(query) }
+            }
             Text(heading.uppercase(), color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, modifier = Modifier.padding(top = 20.dp, bottom = 4.dp))
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
@@ -135,6 +206,26 @@ private fun SearchScreen(act: ComponentActivity) {
                 )
             }
         }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun PillButton(label: String, modifier: Modifier, onClick: () -> Unit) {
+    var f by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(22.dp)
+    Box(
+        modifier
+            .clip(shape)
+            .background(if (f) Color.White else Color.White.copy(alpha = 0.10f))
+            .border(1.dp, Color.White.copy(alpha = if (f) 1f else 0.18f), shape)
+            .onFocusChanged { f = it.isFocused }
+            .onKeyEvent { e ->
+                if (e.type == KeyEventType.KeyUp && (e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter)) { Sounds.select(); onClick(); true } else false
+            }
+            .focusable()
+            .padding(horizontal = 18.dp, vertical = 9.dp)
+    ) {
+        Text(label, color = if (f) Color.Black else Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
