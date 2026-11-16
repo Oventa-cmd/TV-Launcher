@@ -169,6 +169,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
     var settingsOpen by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     LaunchedEffect(resumeTick) { Watchlist.init(ctx); Watchlist.refresh(ctx) }
+    LaunchedEffect(resumeTick) { delay(4000); Updater.autoCheck(ctx) }
     LaunchedEffect(resumeTick) {
         StreamTV.refresh(ctx)
         // Angefangene Folgen aus StreamTV einmal nach dem Start als ersten Reiter zeigen
@@ -778,6 +779,9 @@ private fun SettingsPanel(
         }
         ActionRow("Bildschirmschoner jetzt starten", null) { activity.startScreensaver() }
         Spacer(Modifier.height(18.dp))
+        Section("Updates")
+        UpdateRows()
+        Spacer(Modifier.height(18.dp))
         Section("System")
         ToggleRow("Temperatur Aachen", activity.weather.value, { activity.setWeather(!activity.weather.value) }, null)
         ToggleRow("Eingänge (HDMI) anzeigen", showInputs, { activity.setShowInputs(!showInputs) }, null)
@@ -793,6 +797,28 @@ private fun SettingsPanel(
             ActionRow(activity.stockHomeLabel, null) { activity.openStockHome() }
         }
         }
+    }
+}
+
+@Composable
+private fun UpdateRows() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val latest = Updater.latest.value
+    val pct = Updater.progress.value
+    val checking = Updater.checking.value
+    val avail = latest.isNotEmpty() && Updater.available(ctx)
+    val installed = remember { Updater.installed(ctx) }
+    when {
+        pct >= 0 -> ActionRow("Lade Update …", "$pct %") { }
+        avail -> ActionRow("Update ${latest.removePrefix("v")} installieren", "Installiert: $installed") { Updater.install(ctx) }
+        else -> ActionRow(if (checking) "Suche nach Updates …" else "Nach Updates suchen", "Version $installed") {
+            scope.launch { Updater.check(ctx, manual = true) }
+        }
+    }
+    ToggleRow("Automatisch nach Updates suchen", Updater.autoEnabled(ctx), { Updater.setAutoEnabled(ctx, !Updater.autoEnabled(ctx)) }, null)
+    Updater.status.value?.let {
+        Text(it, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
     }
 }
 

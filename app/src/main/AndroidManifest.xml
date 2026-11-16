@@ -11,6 +11,8 @@
 
     <!-- Wetter (Open-Meteo) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Selbst-Update aus den GitHub-Releases -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -83,6 +85,9 @@
             android:exported="false"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
             android:windowSoftInputMode="adjustPan" />
+
+        <!-- Rueckmeldung des Systeminstallers beim Selbst-Update -->
+        <receiver android:name=".UpdateReceiver" android:exported="false" />
 
         <service
             android:name=".Screensaver"
