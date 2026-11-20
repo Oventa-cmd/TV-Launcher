@@ -11,7 +11,7 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putString("visible", v.joinToString(",")).apply() }
 
     var wallpaper: Int
-        get() = sp.getInt("wallpaper", 0)
+        get() = sp.getInt("wallpaper", 0).let { if (it in WALLPAPERS.indices) it else 0 }
         set(v) { sp.edit().putInt("wallpaper", v).apply() }
 
     /** Hintergrund automatisch wechseln, alle n Minuten (0 = aus). */

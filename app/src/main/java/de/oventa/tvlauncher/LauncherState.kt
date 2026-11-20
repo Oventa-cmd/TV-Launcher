@@ -55,7 +55,6 @@ class LauncherState(
     private val onReady: () -> Unit = {}
 ) {
     private val prefs = Prefs(ctx)
-    init { Skins.load(ctx) }
     private val main = Handler(Looper.getMainLooper())
 
     val apps = mutableStateOf(Apps.cache)

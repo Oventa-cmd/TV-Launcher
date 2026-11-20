@@ -98,25 +98,15 @@ import java.util.Locale
 
 val WALLPAPERS = listOf(
     R.drawable.wall_dark, R.drawable.wall_graphite, R.drawable.wall_blue, R.drawable.wall_sunset,
-    R.drawable.wall_forest, R.drawable.wall_aurora, R.drawable.wall_bordeaux, R.drawable.wall_ocean,
-    R.drawable.wave_blue, R.drawable.wave_violet, R.drawable.wave_red, R.drawable.wave_mono,
-    R.drawable.wave_neon, R.drawable.wave_sunrise, R.drawable.wave_teal
+    R.drawable.wall_forest, R.drawable.wall_aurora, R.drawable.wall_bordeaux, R.drawable.wall_ocean
 )
-val WALL_NAMES = listOf(
-    "Dunkel", "Graphit", "Nachtblau", "Abendrot", "Wald", "Polarlicht", "Bordeaux", "Ozean",
-    "Welle Blau", "Welle Violett", "Welle Rot", "Welle Grau", "Welle Neon", "Welle Gold", "Welle Türkis"
-)
+val WALL_NAMES = listOf("Dunkel", "Graphit", "Nachtblau", "Abendrot", "Wald", "Polarlicht", "Bordeaux", "Ozean")
 val ROTATE_STEPS = listOf(0, 5, 15, 60)
 
 private val White = Color.White
 private val Muted = Color.White.copy(alpha = 0.66f)
 private val Smooth = spring<Float>(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)
-private val Sk: Skin get() = Skins.current.value
-private val Accent: Color get() = Sk.accent
-private val FocusBg: Color get() = Sk.focusBg
-private val FocusFg: Color get() = Sk.focusFg
-/** Eckenradius passend zum Design */
-private fun rad(v: Int): Dp = (v * Sk.radius).dp
+private val Accent = Color(0xFF9CC8FF)
 private const val INTRO_MS = 1700
 
 /** Weiches Ueberschwingen ("fliegt rein und federt nach"). */
@@ -132,22 +122,21 @@ private fun raw(p: Float, start: Float, len: Float) = ((p - start) / len).coerce
 private fun seg(p: Float, start: Float, len: Float) = FastOutSlowInEasing.transform(raw(p, start, len))
 
 /** Glasoptik ohne Weichzeichner (Fire OS 7 kann keinen Hintergrund-Blur): Verlauf + Lichtkante. */
-private fun Modifier.glass(shape: Shape, focused: Boolean = false, strength: Float = 1f): Modifier {
-    val k = Sk
-    val top = (if (focused) k.glassTop + 0.15f else k.glassTop).coerceAtMost(0.95f)
-    val bottom = (if (focused) k.glassBottom + 0.11f else k.glassBottom).coerceAtMost(0.95f)
-    val m = this.background(
-        Brush.verticalGradient(listOf(k.tint.copy(alpha = top * strength), k.tint.copy(alpha = bottom * strength))),
+private fun Modifier.glass(shape: Shape, focused: Boolean = false, strength: Float = 1f): Modifier = this
+    .background(
+        Brush.verticalGradient(
+            listOf(
+                White.copy(alpha = (if (focused) 0.30f else 0.15f) * strength),
+                White.copy(alpha = (if (focused) 0.16f else 0.05f) * strength)
+            )
+        ),
         shape
     )
-    if (k.edgeAlpha <= 0f && !focused) return m
-    val ea = if (k.edgeAlpha <= 0f) 0.5f else k.edgeAlpha
-    return m.border(
+    .border(
         1.dp,
-        Brush.verticalGradient(listOf(k.edge.copy(alpha = ((if (focused) 0.65f else 0.38f) * ea).coerceAtMost(1f)), k.edge.copy(alpha = 0.06f * ea))),
+        Brush.verticalGradient(listOf(White.copy(alpha = if (focused) 0.65f else 0.38f), White.copy(alpha = 0.06f))),
         shape
     )
-}
 
 @Composable
 fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
@@ -278,7 +267,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
             }
     ) {
         Wallpaper(wallpaper, anims)
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.10f), Color.Black.copy(alpha = Sk.dim)))))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.10f), Color.Black.copy(alpha = 0.40f)))))
 
         // Waehrend die Detailansicht offen ist, wird der Startbildschirm ausgeblendet (kein Fokus dahinter)
         if (wlDetail == null) Column(Modifier.fillMaxSize().padding(start = 60.dp, end = 60.dp, top = 30.dp, bottom = 30.dp)) {
@@ -324,7 +313,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                 ) { t ->
                     Text(
                         t.ifEmpty { " " },
-                        color = White, fontSize = if (wlFocused) 24.sp else 38.sp, fontWeight = Sk.title,
+                        color = White, fontSize = if (wlFocused) 24.sp else 38.sp, fontWeight = FontWeight.Bold,
                         letterSpacing = if (wlFocused) (-0.5).sp else (-1.2).sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -343,7 +332,7 @@ fun LauncherScreen(state: LauncherState, isOverlay: Boolean = false) {
                         alpha = a
                         translationY = (1f - a) * 40.dp.toPx()
                     }
-                    .then(if (Sk.dock) Modifier.glass(RoundedCornerShape(rad(26)), strength = 0.9f) else Modifier)
+                    .glass(RoundedCornerShape(26.dp), strength = 0.9f)
                     .padding(horizontal = 22.dp, vertical = 14.dp)
             ) {
                 if (shown.isEmpty()) {
@@ -539,7 +528,7 @@ private fun Greeting(p: () -> Float, tick: Int) {
             title.forEachIndexed { i, ch ->
                 Text(
                     ch.toString(),
-                    color = White, fontSize = 36.sp, fontWeight = Sk.title,
+                    color = White, fontSize = 36.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.graphicsLayer {
                         val r = raw(p(), i * step, 0.30f)
                         val c = BackOut.transform(r)
@@ -579,15 +568,15 @@ private fun TopBar(weather: Weather.Now?, onSettings: () -> Unit, gear: FocusReq
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer { scaleX = s; scaleY = s }
-                    .then(if (f) Modifier.background(FocusBg, CircleShape) else Modifier.glass(CircleShape)),
+                    .then(if (f) Modifier.background(White, CircleShape) else Modifier.glass(CircleShape)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("⚙", color = if (f) FocusFg else White, fontSize = 17.sp)
+                Text("⚙", color = if (f) Color.Black else White, fontSize = 17.sp)
             }
         }
         Spacer(Modifier.weight(1f))
         Row(
-            Modifier.glass(RoundedCornerShape(rad(18))).padding(horizontal = 16.dp, vertical = 7.dp),
+            Modifier.glass(RoundedCornerShape(18.dp)).padding(horizontal = 16.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (weather != null) {
@@ -609,13 +598,13 @@ private fun AppTile(app: TvApp, width: Dp, appear: () -> Float, modifier: Modifi
     var pressed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scale by animateFloatAsState(
-        when { pressed -> 1.03f; focused -> Sk.zoom; else -> 1f },
+        when { pressed -> 1.03f; focused -> 1.14f; else -> 1f },
         if (pressed) tween(90) else Smooth, label = "scale"
     )
     val lift by animateDpAsState(if (focused) (-6).dp else 0.dp, spring(0.72f, Spring.StiffnessMediumLow), label = "lift")
     val elev by animateDpAsState(if (focused) 22.dp else 4.dp, tween(260), label = "elev")
     val sheen by animateFloatAsState(if (focused) 1f else 0f, tween(260), label = "sheen")
-    val shape = RoundedCornerShape(rad(12))
+    val shape = RoundedCornerShape(12.dp)
     val height = width * 9f / 16f
 
     Column(
@@ -646,7 +635,7 @@ private fun AppTile(app: TvApp, width: Dp, appear: () -> Float, modifier: Modifi
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift.toPx() }
-                    .shadow(elev, shape, clip = false, ambientColor = if (Sk.glow && focused) Accent else Color.Black, spotColor = if (Sk.glow && focused) Accent else Color.Black)
+                    .shadow(elev, shape, clip = false)
                     .clip(shape)
                     .background(Color(0xFF1C1C22)),
                 contentAlignment = Alignment.Center
@@ -664,13 +653,8 @@ private fun AppTile(app: TvApp, width: Dp, appear: () -> Float, modifier: Modifi
                 Box(
                     Modifier.fillMaxSize()
                         .background(Brush.verticalGradient(listOf(White.copy(alpha = 0.10f + 0.16f * sheen), Color.Transparent, Color.Transparent)))
-                        .then(
-                            if (Sk.edgeAlpha > 0f) Modifier.border(1.dp, Brush.verticalGradient(listOf(White.copy(alpha = (0.30f + 0.45f * sheen) * Sk.edgeAlpha.coerceAtMost(1f)), White.copy(alpha = 0.05f))), shape)
-                            else Modifier
-                        )
+                        .border(1.dp, Brush.verticalGradient(listOf(White.copy(alpha = 0.30f + 0.45f * sheen), White.copy(alpha = 0.05f))), shape)
                 )
-                if (focused && Sk.ring != Color.White) Box(Modifier.fillMaxSize().border(2.dp, Sk.ring, shape))
-                else if (focused && !Sk.dock) Box(Modifier.fillMaxSize().border(2.dp, Sk.ring, shape))
             }
         }
     }
@@ -683,15 +667,15 @@ private fun Pill(label: String, modifier: Modifier, onClick: () -> Unit) {
     val padH by animateDpAsState(if (f) 20.dp else 14.dp, spring(0.75f, Spring.StiffnessMediumLow), label = "padH")
     val padV by animateDpAsState(if (f) 8.dp else 6.dp, spring(0.75f, Spring.StiffnessMediumLow), label = "padV")
     val fs by animateFloatAsState(if (f) 13f else 12f, Smooth, label = "fs")
-    val shape = RoundedCornerShape(rad(16))
+    val shape = RoundedCornerShape(16.dp)
     Box(
         modifier
             .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
             .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
-            .then(if (f) Modifier.background(FocusBg, shape) else Modifier.glass(shape))
+            .then(if (f) Modifier.background(White, shape) else Modifier.glass(shape))
             .padding(horizontal = padH, vertical = padV)
     ) {
-        Text(label, color = if (f) FocusFg else White, fontSize = fs.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = if (f) Color.Black else White, fontSize = fs.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -716,7 +700,7 @@ private fun SettingsPanel(
         wasInApps = appsPage
     }
     val ordered = visible.mapNotNull { p -> apps.firstOrNull { it.packageName == p } } + apps.filter { it.packageName !in visible }
-    val shape = RoundedCornerShape(rad(24))
+    val shape = RoundedCornerShape(24.dp)
     val learning = LauncherMemory.learningKey.value
     val menuKey = LauncherMemory.menuKey.value
 
@@ -726,8 +710,8 @@ private fun SettingsPanel(
             .width(370.dp)
             .fillMaxHeight()
             .shadow(30.dp, shape)
-            .background(Brush.verticalGradient(listOf(Sk.panelTop, Sk.panelBottom)), shape)
-            .border(1.dp, Brush.verticalGradient(listOf(Sk.edge.copy(alpha = 0.40f * Sk.edgeAlpha.coerceIn(0.25f, 1f)), White.copy(alpha = 0.06f))), shape)
+            .background(Brush.verticalGradient(listOf(Color(0xE6343440), Color(0xEB16161C))), shape)
+            .border(1.dp, Brush.verticalGradient(listOf(White.copy(alpha = 0.40f), White.copy(alpha = 0.06f))), shape)
             .clip(shape)
             .padding(horizontal = 26.dp, vertical = 26.dp)
             .verticalScroll(rememberScrollState())
@@ -747,21 +731,10 @@ private fun SettingsPanel(
         } else {
         Text("Einstellungen", color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(18.dp))
-        Section("Design")
-        val ctx = LocalContext.current
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Skins.all.forEachIndexed { i, sk ->
-                SkinThumb(sk, sk.id == Sk.id, if (i == 0) Modifier.focusRequester(first) else Modifier) {
-                    Skins.set(ctx, sk)
-                    activity.setWallpaper(sk.wallpaper)
-                }
-            }
-        }
-        Spacer(Modifier.height(18.dp))
         Section("Hintergrund")
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             WALLPAPERS.forEachIndexed { i, res ->
-                WallThumb(res, WALL_NAMES[i], i == wallpaper, Modifier) { activity.setWallpaper(i) }
+                WallThumb(res, WALL_NAMES[i], i == wallpaper, if (i == 0) Modifier.focusRequester(first) else Modifier) { activity.setWallpaper(i) }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -869,8 +842,8 @@ private fun WallThumb(res: Int, name: String, selected: Boolean, modifier: Modif
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer { scaleX = s; scaleY = s }
-                    .clip(RoundedCornerShape(rad(9)))
-                    .border(if (selected || f) 2.dp else 1.dp, if (selected || f) White else White.copy(alpha = 0.15f), RoundedCornerShape(rad(9)))
+                    .clip(RoundedCornerShape(9.dp))
+                    .border(if (selected || f) 2.dp else 1.dp, if (selected || f) White else White.copy(alpha = 0.15f), RoundedCornerShape(9.dp))
             ) {
                 Image(painterResource(res), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             }
@@ -879,51 +852,11 @@ private fun WallThumb(res: Int, name: String, selected: Boolean, modifier: Modif
     }
 }
 
-/** Vorschau eines Designs: Hintergrund mit Mini-Dock im Stil des Skins. */
-@Composable
-private fun SkinThumb(sk: Skin, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    var f by remember { mutableStateOf(false) }
-    val s by animateFloatAsState(if (f) 1.08f else 1f, Smooth, label = "skin")
-    val shape = RoundedCornerShape((9 * sk.radius).dp)
-    Column {
-        Box(
-            modifier
-                .size(92.dp, 52.dp)
-                .onFocusChanged { f = it.isFocused; if (it.isFocused) Sounds.nav() }
-                .clickable(remember { MutableInteractionSource() }, null) { Sounds.select(); onClick() }
-        ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { scaleX = s; scaleY = s }
-                    .clip(shape)
-                    .border(if (selected || f) 2.dp else 1.dp, if (selected || f) sk.accent else White.copy(alpha = 0.15f), shape)
-            ) {
-                Image(painterResource(WALLPAPERS[sk.wallpaper.coerceIn(0, WALLPAPERS.size - 1)]), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                Row(
-                    Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp)
-                        .then(if (sk.dock) Modifier.background(sk.tint.copy(alpha = sk.glassTop + 0.1f), RoundedCornerShape((5 * sk.radius).dp)) else Modifier)
-                        .padding(3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    repeat(4) { i ->
-                        Box(
-                            Modifier.size(13.dp, 8.dp)
-                                .background(if (i == 1) sk.focusBg else Color.White.copy(alpha = 0.35f), RoundedCornerShape((2 * sk.radius).dp))
-                        )
-                    }
-                }
-            }
-        }
-        Text(sk.name, color = if (selected) White else Muted, fontSize = 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 5.dp))
-    }
-}
-
 @Composable
 private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: ((Int) -> Unit)?, modifier: Modifier = Modifier) {
     var f by remember { mutableStateOf(false) }
     val knob by animateDpAsState(if (on) 15.dp else 0.dp, spring(0.7f, Spring.StiffnessMedium), label = "knob")
-    val shape = RoundedCornerShape(rad(10))
+    val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier
             .fillMaxWidth()
@@ -944,8 +877,8 @@ private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: 
     ) {
         Text(label, color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Box(
-            Modifier.size(34.dp, 19.dp).clip(RoundedCornerShape(rad(10)))
-                .background(if (on) (if (Sk.id == "glass") Color(0xFF34C759) else Accent) else White.copy(alpha = 0.2f))
+            Modifier.size(34.dp, 19.dp).clip(RoundedCornerShape(10.dp))
+                .background(if (on) Color(0xFF34C759) else White.copy(alpha = 0.2f))
                 .padding(2.dp)
         ) {
             Box(Modifier.padding(start = knob).size(15.dp).clip(CircleShape).background(White))
@@ -956,7 +889,7 @@ private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit, onMove: 
 @Composable
 private fun ActionRow(label: String, value: String?, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(rad(10))
+    val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier
             .fillMaxWidth()
@@ -1058,7 +991,7 @@ private fun WatchlistRow(
                             .focusProperties { this.up = up; if (down != null) this.down = down; tabReq[tab]?.let { left = it } }
                             .onFocusChanged { f = it.isFocused }
                             .clickable(remember { MutableInteractionSource() }, null) { }
-                            .then(if (f) Modifier.glass(RoundedCornerShape(rad(12)), focused = true) else Modifier)
+                            .then(if (f) Modifier.glass(RoundedCornerShape(12.dp), focused = true) else Modifier)
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
                         Text(
@@ -1095,7 +1028,7 @@ private fun TabRail(
             .padding(start = CARD_MARGIN - 6.dp, end = 6.dp)
             .width(178.dp)
             .fillMaxHeight()
-            .glass(RoundedCornerShape(rad(14)), strength = 0.8f)
+            .glass(RoundedCornerShape(14.dp), strength = 0.8f)
             .padding(vertical = 6.dp, horizontal = 6.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -1109,13 +1042,13 @@ private fun TabRail(
                     .focusProperties { this.right = right; this.up = up }
                     .onFocusChanged { st -> f = st.isFocused; if (st.isFocused) Sounds.nav() }
                     .clickable(remember { MutableInteractionSource() }, null) { Sounds.open(); onSearch() }
-                    .background(if (f) FocusBg else White.copy(alpha = 0.08f), RoundedCornerShape(rad(8)))
+                    .background(if (f) White else White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
                     .padding(horizontal = 10.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("⌕", color = if (f) FocusFg else White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("⌕", color = if (f) Color.Black else White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(7.dp))
-                Text("Suchen", fontSize = 11.sp, color = if (f) FocusFg else White, fontWeight = FontWeight.SemiBold)
+                Text("Suchen", fontSize = 11.sp, color = if (f) Color.Black else White, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(3.dp))
         }
@@ -1133,15 +1066,15 @@ private fun TabRail(
                     }
                     .onFocusChanged { st -> f = st.isFocused; if (st.isFocused) { Sounds.nav(); if (!sel) onTab(t.id) } }
                     .clickable(remember { MutableInteractionSource() }, null) { right.let { r -> try { r.requestFocus() } catch (_: Exception) { } } }
-                    .background(if (f) FocusBg else Color.Transparent, RoundedCornerShape(rad(8)))
+                    .background(if (f) White else Color.Transparent, RoundedCornerShape(8.dp))
                     .padding(horizontal = 10.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(Modifier.size(5.dp).background(if (sel) (if (f) FocusFg else Accent) else Color.Transparent, CircleShape))
+                Box(Modifier.size(5.dp).background(if (sel) (if (f) Color.Black else Accent) else Color.Transparent, CircleShape))
                 Spacer(Modifier.width(7.dp))
                 Text(
                     t.label, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (f) FocusFg else if (sel) White else White.copy(alpha = 0.7f),
+                    color = if (f) Color.Black else if (sel) White else White.copy(alpha = 0.7f),
                     fontWeight = if (sel || f) FontWeight.SemiBold else FontWeight.Medium
                 )
             }
@@ -1152,8 +1085,8 @@ private fun TabRail(
 @Composable
 internal fun WatchCard(it: RowCard, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
-    val s by animateFloatAsState(if (f) (Sk.zoom - 0.04f).coerceAtLeast(1.04f) else 1f, Smooth, label = "wc")
-    val shape = RoundedCornerShape(rad(12))
+    val s by animateFloatAsState(if (f) 1.10f else 1f, Smooth, label = "wc")
+    val shape = RoundedCornerShape(12.dp)
     val bg = rememberTmdbImage(it.image, "w780")
     val logo = rememberTmdbImage(it.logo, "w300")
     // Fokus-Ziel mit Rand: beim Scrollen bleibt die vergroesserte Karte komplett sichtbar
@@ -1167,7 +1100,7 @@ internal fun WatchCard(it: RowCard, modifier: Modifier, onFocus: () -> Unit, onC
         Box(
             Modifier.size(170.dp, 96.dp)
                 .graphicsLayer { scaleX = s; scaleY = s }
-                .shadow(if (f) 20.dp else 4.dp, shape, clip = false, ambientColor = if (Sk.glow && f) Accent else Color.Black, spotColor = if (Sk.glow && f) Accent else Color.Black)
+                .shadow(if (f) 20.dp else 4.dp, shape, clip = false)
                 .clip(shape)
                 .background(Color(0xFF1C1C22))
         ) {
@@ -1183,9 +1116,9 @@ internal fun WatchCard(it: RowCard, modifier: Modifier, onFocus: () -> Unit, onC
                 Text(it.subtitle, color = White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
             }
             if (it.progress != null) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(White.copy(alpha = 0.18f))) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(it.progress).background(if (Sk.id == "glass") White else Accent))
+                Box(Modifier.fillMaxHeight().fillMaxWidth(it.progress).background(White))
             }
-            Box(Modifier.fillMaxSize().border(if (f) 2.dp else 1.dp, if (f) Sk.ring else White.copy(alpha = 0.15f * Sk.edgeAlpha.coerceAtMost(1f)), shape))
+            Box(Modifier.fillMaxSize().border(if (f) 2.dp else 1.dp, if (f) White else White.copy(alpha = 0.15f), shape))
         }
     }
 }
@@ -1227,7 +1160,7 @@ private fun WatchlistDetail(
             }.joinToString("  ·  ")
             Text(info, color = Muted, fontSize = 14.sp)
             if (item.total > 0) {
-                Box(Modifier.padding(top = 12.dp).width(300.dp).height(4.dp).clip(RoundedCornerShape(rad(2))).background(White.copy(alpha = 0.18f))) {
+                Box(Modifier.padding(top = 12.dp).width(300.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(White.copy(alpha = 0.18f))) {
                     Box(Modifier.fillMaxHeight().fillMaxWidth(item.progress).background(White))
                 }
             }
@@ -1268,7 +1201,7 @@ private fun WatchlistDetail(
 private fun DetailButton(label: String, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     val s by animateFloatAsState(if (f) 1.05f else 1f, Smooth, label = "db")
-    val shape = RoundedCornerShape(rad(24))
+    val shape = RoundedCornerShape(24.dp)
     Box(
         modifier
             .padding(vertical = 5.dp)
@@ -1278,10 +1211,10 @@ private fun DetailButton(label: String, primary: Boolean, modifier: Modifier, on
         Box(
             Modifier
                 .graphicsLayer { scaleX = s; scaleY = s; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) }
-                .then(if (f) Modifier.background(FocusBg, shape) else if (primary) Modifier.glass(shape, focused = true) else Modifier.glass(shape))
+                .then(if (f) Modifier.background(White, shape) else if (primary) Modifier.glass(shape, focused = true) else Modifier.glass(shape))
                 .padding(horizontal = 22.dp, vertical = 11.dp)
         ) {
-            Text(label, color = if (f) FocusFg else White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = if (f) Color.Black else White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
