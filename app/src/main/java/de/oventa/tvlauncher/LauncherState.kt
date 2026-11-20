@@ -217,6 +217,13 @@ class LauncherState(
         if (StreamTV.open(ctx, uri)) onLeave()
     }
 
+    val remap = mutableStateOf(Remap.slots.associate { it.id to prefs.remapOn(it.id) })
+    fun toggleRemap(id: String) {
+        val v = !(remap.value[id] ?: true)
+        prefs.setRemapOn(id, v); remap.value = remap.value + (id to v)
+    }
+    fun remapTargetMissing(s: Remap.Slot) = Remap.target(ctx, s) == null
+
     fun setLongBackHome(b: Boolean) { longBackHome.value = b; prefs.longBackHome = b }
     fun cycleScreensaver() {
         val next = Power.SAVER_STEPS[(Power.SAVER_STEPS.indexOf(screensaverMin.value) + 1).mod(Power.SAVER_STEPS.size)]

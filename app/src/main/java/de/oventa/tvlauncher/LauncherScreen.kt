@@ -769,6 +769,13 @@ private fun SettingsPanel(
             else -> ActionRow("Zusätzliche Taste anlernen", LauncherMemory.keyName(menuKey)) { activity.startLearningKey() }
         }
         if (menuKey != 0 && !learning && activity.serviceActive) ActionRow("Zusätzliche Taste ausschalten", null) { activity.disableMenuKey() }
+        if (activity.serviceActive) Remap.slots.forEach { sl ->
+            val missing = activity.remapTargetMissing(sl)
+            ToggleRow(
+                "${sl.label} → ${sl.targetName}" + if (missing) " (nicht installiert)" else "",
+                activity.remap.value[sl.id] ?: true, { activity.toggleRemap(sl.id) }, null
+            )
+        }
         Spacer(Modifier.height(18.dp))
         Section("Bildschirmschoner & Ausschalten")
         if (activity.canWritePower) {
@@ -950,6 +957,8 @@ private fun WatchlistRow(
     var rowFocus by remember { mutableStateOf(false) }
     val tabReq = remember(tabs.map { it.id }) { tabs.associate { it.id to FocusRequester() } }
     val label = tabs.firstOrNull { it.id == tab }?.label ?: ""
+    // Nur ein Reiter (z. B. nur „Weiterschauen“): kein Menue links
+    val hasRail = tabs.size > 1
     Column(Modifier.graphicsLayer {
         val a = seg(introP(), 0.22f, 0.40f)
         alpha = a; translationY = (1f - a) * 24.dp.toPx()
@@ -960,7 +969,7 @@ private fun WatchlistRow(
             }
             // Punkte als Hinweis, welcher Reiter gerade laeuft
             Spacer(Modifier.width(10.dp))
-            tabs.forEach { t ->
+            if (hasRail) tabs.forEach { t ->
                 Box(Modifier.padding(horizontal = 2.dp).size(if (t.id == tab) 6.dp else 4.dp).background(White.copy(alpha = if (t.id == tab) 0.9f else 0.3f), CircleShape))
             }
         }
@@ -973,7 +982,7 @@ private fun WatchlistRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             AnimatedVisibility(
-                visible = rowFocus,
+                visible = rowFocus && hasRail,
                 enter = androidx.compose.animation.expandHorizontally(tween(260)) + fadeIn(tween(220)),
                 exit = androidx.compose.animation.shrinkHorizontally(tween(220)) + fadeOut(tween(160))
             ) {
@@ -988,7 +997,7 @@ private fun WatchlistRow(
                     var f by remember { mutableStateOf(false) }
                     Box(
                         Modifier.padding(start = CARD_MARGIN).focusRequester(first)
-                            .focusProperties { this.up = up; if (down != null) this.down = down; tabReq[tab]?.let { left = it } }
+                            .focusProperties { this.up = up; if (down != null) this.down = down; if (hasRail) tabReq[tab]?.let { left = it } }
                             .onFocusChanged { f = it.isFocused }
                             .clickable(remember { MutableInteractionSource() }, null) { }
                             .then(if (f) Modifier.glass(RoundedCornerShape(12.dp), focused = true) else Modifier)
@@ -1006,7 +1015,7 @@ private fun WatchlistRow(
                             (if (i == 0) Modifier.focusRequester(first) else Modifier).focusProperties {
                                 this.up = up
                                 if (down != null) this.down = down
-                                if (i == 0) tabReq[tab]?.let { left = it }
+                                if (i == 0 && hasRail) tabReq[tab]?.let { left = it }
                             },
                             onFocus = { onFocus(c) },
                             onClick = { onClick(c) }

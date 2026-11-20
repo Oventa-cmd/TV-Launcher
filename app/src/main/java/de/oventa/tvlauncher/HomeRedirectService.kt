@@ -55,6 +55,7 @@ class HomeRedirectService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         if (pkg != "com.android.systemui") foreground = pkg
         if (pkg == packageName) return
+        if (Remap.onForeground(this, pkg)) return
         if (pkg !in STOCK_LAUNCHERS) {
             // Eine andere App ist vorne (z. B. aus dem Overlay gestartet): Overlay weg
             if (pkg != "com.android.systemui") hideOverlay()
@@ -91,6 +92,7 @@ class HomeRedirectService : AccessibilityService() {
             return true
         }
         if (code == KeyEvent.KEYCODE_BACK && handleBack(event)) return true
+        if (Remap.onKey(this, event)) return true
         val menu = LauncherMemory.menuKey.value
         if (menu == 0 || code != menu) return false
         if (event.action == KeyEvent.ACTION_UP) handler.post {

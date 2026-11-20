@@ -79,4 +79,11 @@ class Prefs(context: Context) {
     var stockAutoDone: Boolean
         get() = sp.getBoolean("stockAutoDone", false)
         set(v) { sp.edit().putBoolean("stockAutoDone", v).apply() }
+
+    /** App-Taste umbelegen (netflix/prime/youtube), standardmaessig an. */
+    fun remapOn(id: String) = sp.getBoolean("remap_$id", true)
+    fun setRemapOn(id: String, v: Boolean) { sp.edit().putBoolean("remap_$id", v).apply() }
+    /** Automatisch gelernter Tastencode der App-Taste (0 = unbekannt). */
+    fun remapKey(id: String) = sp.getInt("remapKey_$id", 0)
+    fun setRemapKey(id: String, v: Int) { sp.edit().putInt("remapKey_$id", v).apply() }
 }
